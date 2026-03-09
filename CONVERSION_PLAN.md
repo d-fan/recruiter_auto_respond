@@ -21,26 +21,32 @@ We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail 
 - **Implementation:** A `.env` file containing:
   - `LLM_API_URL`: (e.g., `http://localhost:8080/v1`)
   - `LLM_API_KEY`: (defaults to `sk-no-key-required` for local llama.cpp)
-  - `LLM_MAX_CONTEXT`: (e.g., `70000`) Maximum tokens/characters to send to the model.
+  - `LLM_MAX_CONTEXT`: (e.g., `70000`) Maximum **tokens** to send to the model (matches the model's context window size). The email body will be truncated by token count before being included in the prompt to stay within this limit.
   - `PARALLEL_LIMIT`: (e.g., `10`) Number of concurrent LLM requests.
   - `GOOGLE_SHEET_ID`, `GMAIL_LABEL_NAME`.
-  - `GOOGLE_APPLICATION_CREDENTIALS`: Path to `credentials.json`.
-- **Google Auth:** Standard OAuth2 flow producing a local `token.json` for persistent sessions.
+  - `GOOGLE_OAUTH_CLIENT_SECRET_FILE`: Path to OAuth client secrets JSON (downloaded from Google Cloud Console).
+- **Google Auth:** Installed-app OAuth2 flow using `GOOGLE_OAUTH_CLIENT_SECRET_FILE` to generate and reuse a local `token.json` for persistent sessions.
+- **Version Control Hygiene:** `.env`, `credentials.json`, and `token.json` must **never** be committed to version control. Add them to `.gitignore` so that secrets and refresh tokens remain local-only:
+  ```gitignore
+  .env
+  credentials.json
+  token.json
+  ```
 
 ### B. State Management & "Late-Sync" Drift Protection
 **Goal:** Track progress using a local JSON file while ensuring consistency with the Google Sheet.
-1. `state.json` stores `last_run_timestamp` (ISO format).
+1. `state.json` stores `last_run_timestamp` (ISO format) and optionally a lightweight index such as `last_synced_row` or a cache of recent `message_id`s.
 2. The script processes and classifies all new emails found since `last_run_timestamp`.
-3. Immediately before exporting to the Google Sheet, the script fetches the entire 'Message ID' column from the Sheet.
-4. It filters the results one last time to remove any `message_id` already present in the Sheet.
-5. This ensures that even if the script is interrupted or the local state is out of sync, the Sheet remains the single source of truth for "already handled" messages.
+3. Immediately before exporting to the Google Sheet, the script fetches only the **used range** of the 'Message ID' column, bounded to a recent window (e.g., from `last_synced_row` to the current last non-empty row, or the last N rows) instead of scanning the entire column on every run.
+4. It filters the results one last time to remove any `message_id` already present in this bounded Sheet range and/or in the locally cached index.
+5. This ensures drift protection (the Sheet remains the single source of truth for "already handled" messages) while avoiding an unbounded O(N) read on every run. A full reconciliation of the entire column can be performed as a rare maintenance step if needed.
 
 ### C. Gmail & LLM Pipeline
 - **Search Query:** `-label:"{LABEL_NAME}" (category:primary OR category:updates) after:{TIMESTAMP}`.
 - **Classification:**
   - Use the `llama.cpp` `/v1/chat/completions` endpoint.
   - **JSON Mode:** Pass `response_format={"type": "json_object"}` to guarantee parsable output.
-  - **Context Handling:** Truncate email body to stay safely within `LLM_MAX_CONTEXT` (e.g., ~70k for current local model).
+  - **Context Handling:** Truncate email body by token count to stay safely within `LLM_MAX_CONTEXT` tokens (e.g., ~70k tokens for the current local model).
   - **Prompt:** Maintain the strict `{"isRecruiter": true/false}` JSON requirement.
 - **Batch Action:** 
   1. Fetch message IDs from the Sheet.
