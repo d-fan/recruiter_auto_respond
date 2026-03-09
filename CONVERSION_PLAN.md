@@ -2,7 +2,7 @@
 
 This document outlines the architectural design for migrating `appscript.js` to a high-performance Python application using **Option B: Modern Async**, customized for local execution and `llama.cpp` integration.
 
-## 1. Selected Architecture:
+## 1. Selected Architecture
 We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail API, LLM calls, and Sheets API).
 
 ### Key Stack
@@ -10,7 +10,7 @@ We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail 
 - **HTTP Client:** `httpx` OR `openai` (as an SDK for the local `llama.cpp` server).
 - **LLM Provider:** `llama.cpp` server (OpenAI-compatible).
 - **Gmail/Sheets API:** `google-api-python-client` with `asyncio` wrappers or `gspread-asyncio`.
-- **Concurrency Control:** `asyncio.Semaphore(10)` to limit parallel LLM requests.
+- **Concurrency Control:** `asyncio.Semaphore(PARALLEL_LIMIT)` to limit parallel LLM requests.
 
 ---
 
@@ -21,6 +21,8 @@ We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail 
 - **Implementation:** A `.env` file containing:
   - `LLM_API_URL`: (e.g., `http://localhost:8080/v1`)
   - `LLM_API_KEY`: (defaults to `sk-no-key-required` for local llama.cpp)
+  - `LLM_MAX_CONTEXT`: (e.g., `70000`) Maximum tokens/characters to send to the model.
+  - `PARALLEL_LIMIT`: (e.g., `10`) Number of concurrent LLM requests.
   - `GOOGLE_SHEET_ID`, `GMAIL_LABEL_NAME`.
   - `GOOGLE_APPLICATION_CREDENTIALS`: Path to `credentials.json`.
 - **Google Auth:** Standard OAuth2 flow producing a local `token.json` for persistent sessions.
@@ -38,6 +40,7 @@ We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail 
 - **Classification:**
   - Use the `llama.cpp` `/v1/chat/completions` endpoint.
   - **JSON Mode:** Pass `response_format={"type": "json_object"}` to guarantee parsable output.
+  - **Context Handling:** Truncate email body to stay safely within `LLM_MAX_CONTEXT` (e.g., ~70k for current local model).
   - **Prompt:** Maintain the strict `{"isRecruiter": true/false}` JSON requirement.
 - **Batch Action:** 
   1. Fetch message IDs from the Sheet.
@@ -55,31 +58,15 @@ We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail 
 
 ---
 
-## 3. Brainstorming: Remaining Details & Edge Cases
+## 3. Implementation Details & Assumptions
 
-### 1. llama.cpp Context Management
-- **Detail:** Since `llama.cpp` is local, we should check the `n_ctx` (context window) of your loaded model. If an email exceeds this, we need to truncate the body gracefully to avoid API errors.
+### 1. Sheet State
+- **Assumption:** The Google Sheet is already set up with proper headers (`Thread ID`, `Message ID`, `Date`, etc.). Automatic initialization of an empty sheet is deferred for now.
 
-n_ctx is 71936 for the local model. This may change if we use models with different VRAM requirements in the future. Get to the right order of magnitude for this, without going over.
+### 2. Logging
+- **Requirement:** Logs must clearly distinguish between a message being "Newly Classified" vs "Already in Sheet (Skipped)" during the late-sync phase.
 
-### 2. Sheet Initialization
-- **Detail:** On the first run, the script should check if the "Emails" tab exists and create it with headers (`Thread ID`, `Message ID`, `Date`, etc.) if it is missing.
-
-For now, assume that the sheet is already set up with proper headers. Initialization of an empty sheet can come later.
-
-### 3. Rate Limiting (Local LLM)
-- **Detail:** While `llama.cpp` doesn't have "API Quotas" like OpenAI, running 10 parallel requests (Semaphore) might saturate your CPU/GPU. We may need to adjust the `PARALLEL_LIMIT` based on your hardware's performance.
-
-Yes, `PARALLEL_LIMIT` should be configurable
-
-### 4. Logging & Verification
-- **Detail:** Since we removed `is:unread`, the script might find the same threads in consecutive runs if the label hasn't been applied yet. The "Late-Sync" protection handles this, but the logs should clearly distinguish between "Classified Positive" and "Already in Sheet (Skipped)".
-
-This is a minor detail, but yes, the logs should indicate "classified" vs "duplicate"
-
-### 5. Content Sanitization
-- **Detail:** Ensure we use a clean "Plain Text" extractor. Emails often contain messy signatures or legal disclaimers that consume tokens without helping classification.
-
-We will revisit this later, but we will eventually need to produce a clean conversation thread to ask the LLM for suggested replies and actions.
+### 3. Future Expansion: Content Sanitization
+- **Vision:** While we will start with basic plain-text extraction, we will later implement a cleaner "Conversation Thread" extractor to support more complex LLM tasks like suggested replies and action items.
 
 **Next Step:** Once this design is confirmed, we can begin setting up the project structure and the `.env` / Auth configuration.
