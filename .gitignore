@@ -1,2 +1,8 @@
 .envrc
 credentials.json
+.venv/
+__pycache__/
+*.pyc
+state.json
+token.json
+.env

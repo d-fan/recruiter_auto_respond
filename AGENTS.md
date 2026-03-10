@@ -16,7 +16,7 @@ This project is currently a migration of a Google Apps Script to a high-performa
 ## Secrets & Safety
 - **Never commit:** `credentials.json`, `token.json`, `.env`, or `state.json`.
 - **Git Policy:** Do not stage or commit changes unless explicitly directed. Use `run_shell_command` to verify the environment (e.g., `.venv` activation) before suggesting implementations.
-- **CLI Policy:** Avoid chaining multiple commands, e.g. `python -m venv .venv && echo pytest > requirements.txt`
+- **CLI Policy:** Avoid chaining multiple commands, e.g. `python -m venv .venv && echo pytest > requirements.txt`. Run commands one at a time.
 - **File Edit Policy:** Avoid using command line tools to make file changes unless the contents must come from another command's output. Edit or create the file directly.
 
 ## Project Context
