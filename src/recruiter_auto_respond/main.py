@@ -6,29 +6,30 @@ from recruiter_auto_respond.config import settings
 
 async def main() -> None:
     """Main orchestrator for the AI Recruiter Labeler & Syncer."""
-    logging.info("Starting the pipeline...")
+    logger = logging.getLogger(__name__)
+    logger.info("Starting the pipeline...", extra={"phase": "setup"})
 
     # 1. Load configuration and state
-    logging.info("Phase 1: Loading configuration and state...")
-    _ = settings
-    logging.info(f"Using state file: {settings.STATE_FILE}")
+    logger.info(
+        f"Using state file: {settings.STATE_FILE}", extra={"phase": "phase-1"}
+    )
 
     # 2. Fetch messages from Gmail
-    logging.info("Phase 2: Fetching new messages from Gmail...")
+    logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
 
     # 3. Classify with LLM
-    logging.info("Phase 3: Classifying messages with LLM...")
+    logger.info("Classifying messages with LLM...", extra={"phase": "phase-3"})
 
     # 4. Update Gmail labels
-    logging.info("Phase 4: Updating Gmail labels...")
+    logger.info("Updating Gmail labels...", extra={"phase": "phase-4"})
 
     # 5. Sync results to Google Sheets
-    logging.info("Phase 5: Syncing results to Google Sheets...")
+    logger.info("Syncing results to Google Sheets...", extra={"phase": "phase-5"})
 
     # 6. Update local state
-    logging.info("Phase 6: Updating local state...")
+    logger.info("Updating local state...", extra={"phase": "phase-6"})
 
-    logging.info("Pipeline complete.")
+    logger.info("Pipeline complete.", extra={"phase": "setup"})
 
 
 if __name__ == "__main__":
