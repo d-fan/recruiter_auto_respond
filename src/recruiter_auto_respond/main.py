@@ -10,9 +10,7 @@ async def main() -> None:
     logger.info("Starting the pipeline...", extra={"phase": "setup"})
 
     # 1. Load configuration and state
-    logger.info(
-        f"Using state file: {settings.STATE_FILE}", extra={"phase": "phase-1"}
-    )
+    logger.info(f"Using state file: {settings.STATE_FILE}", extra={"phase": "phase-1"})
 
     # 2. Fetch messages from Gmail
     logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
