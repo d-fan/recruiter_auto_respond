@@ -26,6 +26,9 @@ dev = [
     "types-setuptools",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 # Target Python version
 target-version = "py310"
@@ -49,7 +52,7 @@ select = [
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["config", "gmail_client", "llm_client", "sheets_client", "state_manager"]
+known-first-party = ["recruiter_auto_respond"]
 
 [tool.mypy]
 python_version = "3.12"
