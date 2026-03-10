@@ -21,11 +21,15 @@ class StateManager:
                     data = json.load(f)
                     if not isinstance(data, dict):
                         logging.error(
-                            "Invalid state file format in %s: expected JSON object, got %s",
+                            "Invalid state file format in %s: "
+                            "expected JSON object, got %s",
                             self.state_file,
                             type(data).__name__,
                         )
-                        raise ValueError(f"Invalid state file format: {self.state_file}")
+                        raise ValueError(
+                            f"Invalid state file format: {self.state_file}"
+                        )
+
                     return cast(dict[str, Any], data)
             # Default to a safe baseline if state doesn't exist
             return {"last_run_timestamp": "1970-01-01T00:00:00Z"}
