@@ -1,11 +1,12 @@
 import logging
+from typing import Any
 
 class GmailClient:
     """Client for fetching and labeling Gmail messages."""
-    def __init__(self, service=None) -> None:
+    def __init__(self, service: Any | None = None) -> None:
         self.service = service
 
-    async def fetch_messages(self, query: str) -> list:
+    async def fetch_messages(self, query: str) -> list[dict[str, Any]]:
         """Fetch messages matching the query."""
         logging.info(f"Fetching messages for query: {query}")
         return []

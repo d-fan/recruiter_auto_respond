@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-async def main():
+async def main() -> None:
     """Main orchestrator for the AI Recruiter Labeler & Syncer."""
     logging.info("Starting the pipeline...")
     # 1. Load configuration and state
