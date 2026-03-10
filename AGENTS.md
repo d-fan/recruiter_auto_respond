@@ -22,3 +22,19 @@ This project is currently a migration of a Google Apps Script to a high-performa
 ## Project Context
 - **Source Material:** `appscript.js` contains the original logic. Reference it for prompt engineering and business rules.
 - **Roadmap:** Refer to Github Issues for current implementation status.
+
+## Design choices
+- **Library Selection:** When evaluating options for different libraries for the same behavior, justify the choice in detail. This may include presenting usage examples for each and demonstrating why one is more ergonomic for developers, providing examples where one library would fall short in the future, comparing package sizes and transitive dependencies, etc.
+
+## Development
+- **Conformance Test:** When adding external API calls with an untyped library, add a standalone test that checks that the API result has the expected structure. Use the test output to inform unit test mocks.
+- **Test Driven Development:** First add unit tests, potentially with mock data following the structure of the output of the conformance tests, run those tests to verify that those tests fail, commit those changes, write the actual implementation, then iterate until the tests pass.
+- **Test API calls:** Other than conformance tests, unit tests should not make API calls. Calls and results should be mocked, and interfaces structured to make mocking easy.
+- **Test Changes:** Removing tests or changing the assertion of tests should not be done without explicit user approval. When doing so, it should not happen alongside any implementation changes. Update the test, then after the user allows the file change, update the impemenation. Adding new test cases is always allowed, and should be done when appropriate.
+
+## Workflow
+- **Commits:** Make sure to commit frequently, especially when making intermediate progress for an issue or feature.
+- **Branches/PRs:** Create new feature branches for every issue. Create a Pull Request when changes are ready to review and merge. The repository is configured to automatically request a review from Github Copilot upon Pull Request creation. You do not need to request a review.
+- **PR Comments:** If making substantive changes to the PR, re-request a review from Github Copilot. For small tweaks, no re-reviews are needed.
+- **Linking Issues:** Always link PRs to the relevant Issue, if such an issue exists.
+- **Closing Issues:** If asked to work on an Issue that is already completed but has not yet been closed, suggest to the user to close, and close it yourself if they agree.
