@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "recruiter-auto-respond"
 version = "0.1.0"
@@ -5,7 +9,7 @@ description = "A system to automatically respond to recruiter emails using Gmail
 authors = [
     { name = "d-fan" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "google-api-python-client",
     "google-auth-oauthlib",
@@ -24,7 +28,7 @@ dev = [
 
 [tool.ruff]
 # Target Python version
-target-version = "py312"
+target-version = "py310"
 line-length = 88
 
 [tool.ruff.lint]
