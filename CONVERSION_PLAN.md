@@ -5,12 +5,16 @@ This document outlines the architectural design for migrating `appscript.js` to 
 ## 1. Selected Architecture
 We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail API, LLM calls, and Sheets API).
 
-### Key Stack
+### Library Stack
 - **Runtime:** Python 3.10+
-- **HTTP Client:** `httpx` OR `openai` (as an SDK for the local `llama.cpp` server).
+- **HTTP Client:** `httpx`
+  - *Justification:* Chosen over the `openai` SDK for its minimalist footprint and direct control over the request/response cycle. This is critical for debugging local `llama.cpp` integration where raw JSON logging is prioritized.
 - **LLM Provider:** `llama.cpp` server (OpenAI-compatible).
-- **Gmail/Sheets API:** `google-api-python-client` with `asyncio` wrappers or `gspread-asyncio`.
+- **Gmail/Sheets API:** `google-api-python-client` wrapped with `asyncio.to_thread`.
+  - *Justification:* While heavier than community wrappers like `gspread`, it provides an official, unified interface for both Gmail and Sheets. This ensures long-term maintenance and robust support for batch operations needed for "Late-Sync" protection.
+- **Authentication:** `google-auth-oauthlib` for the initial local OAuth2 flow.
 - **Concurrency Control:** `asyncio.Semaphore(PARALLEL_LIMIT)` to limit parallel LLM requests.
+- **Retries:** `tenacity` for robust error handling on all external API/LLM calls.
 
 ---
 
