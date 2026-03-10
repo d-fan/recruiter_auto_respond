@@ -16,7 +16,9 @@ async def test_get_message_ids(sheets_client, mock_service):
     mock_get = mock_service.spreadsheets().values().get().execute
     mock_get.return_value = {
         "values": [
-            ["msg1", "msg2", "msg3"]
+            ["msg1"],
+            ["msg2"],
+            ["msg3"]
         ]
     }
 
