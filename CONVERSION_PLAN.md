@@ -13,8 +13,12 @@ We will use Python's `asyncio` to manage high-concurrency I/O operations (Gmail 
 - **Gmail/Sheets API:** `google-api-python-client` wrapped with `asyncio.to_thread`.
   - *Justification:* While heavier than community wrappers like `gspread`, it provides an official, unified interface for both Gmail and Sheets. This ensures long-term maintenance and robust support for batch operations needed for "Late-Sync" protection.
 - **Authentication:** `google-auth-oauthlib` for the initial local OAuth2 flow.
-- **Concurrency Control:** `asyncio.Semaphore(PARALLEL_LIMIT)` to limit parallel LLM requests.
-- **Retries:** `tenacity` for robust error handling on all external API/LLM calls.
+- **Concurrency Control:** 
+  - `asyncio.Semaphore(PARALLEL_LIMIT)` for LLM requests.
+  - An additional explicit semaphore for Google API threads to prevent thread pool exhaustion and manage rate limits during high-volume `fetch_message_body` operations.
+- **Retries:** `tenacity` for robust error handling.
+  - *Idempotent operations* (GETs, label additions, LLM inference): Blind automatic retry with exponential backoff.
+  - *Non-idempotent writes* (Google Sheets appends): No blind automatic retries. Use an explicit "Late-Sync" check (B.3) or "upsert-by-ID" pattern to prevent duplicates on write-timeout cases.
 
 ---
 
