@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     GMAIL_LABEL_NAME: str = "recruiter"
     GOOGLE_APPLICATION_CREDENTIALS: str = "credentials.json"
     PARALLEL_LIMIT: int = 10
+    STATE_FILE: str = "state.json"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
