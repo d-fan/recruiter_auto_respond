@@ -1,14 +1,16 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
     """Configuration for the application."""
     LLM_API_URL: str = "http://localhost:8080/v1"
     LLM_API_KEY: str = "sk-no-key-required"
+    LLM_MAX_CONTEXT: int = 70000
     GOOGLE_SHEET_ID: str = ""
     GMAIL_LABEL_NAME: str = "recruiter"
+    GOOGLE_APPLICATION_CREDENTIALS: str = "credentials.json"
     PARALLEL_LIMIT: int = 10
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
