@@ -36,5 +36,6 @@ This project is currently a migration of a Google Apps Script to a high-performa
 - **Commits:** Make sure to commit frequently, especially when making intermediate progress for an issue or feature.
 - **Branches/PRs:** Create new feature branches for every issue. Create a Pull Request when changes are ready to review and merge. The repository is configured to automatically request a review from Github Copilot upon Pull Request creation. You do not need to request a review.
 - **PR Comments:** If making substantive changes to the PR, re-request a review from Github Copilot. For small tweaks, no re-reviews are needed.
+- **Completed Issues:** Do not move on to the next issue until the user tells you to do so.
 - **Linking Issues:** Always link PRs to the relevant Issue, if such an issue exists.
 - **Closing Issues:** If asked to work on an Issue that is already completed but has not yet been closed, suggest to the user to close, and close it yourself if they agree.
