@@ -1,3 +1,27 @@
+[project]
+name = "recruiter-auto-respond"
+version = "0.1.0"
+description = "A system to automatically respond to recruiter emails using Gmail and LLMs."
+authors = [
+    { name = "d-fan" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "httpx",
+    "pydantic-settings",
+    "tenacity",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "mypy",
+    "types-requests",
+    "types-setuptools",
+]
+
 [tool.ruff]
 # Target Python version
 target-version = "py312"
