@@ -1,8 +1,10 @@
 import logging
 from typing import Any
 
+
 class GmailClient:
     """Client for fetching and labeling Gmail messages."""
+
     def __init__(self, service: Any | None = None) -> None:
         self.service = service
 

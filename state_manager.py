@@ -1,11 +1,13 @@
-import logging
-import json
-import os
 import asyncio
-from typing import Any
+import json
+import logging
+import os
+from typing import Any, cast
+
 
 class StateManager:
     """Manager for local state persistence."""
+
     def __init__(self, state_file: str) -> None:
         self.state_file = state_file
 
@@ -15,8 +17,8 @@ class StateManager:
 
         def _load() -> dict[str, Any]:
             if os.path.exists(self.state_file):
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                with open(self.state_file, encoding="utf-8") as f:
+                    return cast(dict[str, Any], json.load(f))
             # Default to a safe baseline if state doesn't exist
             return {"last_run_timestamp": "1970-01-01T00:00:00Z"}
 
@@ -29,7 +31,7 @@ class StateManager:
 
         def _save() -> None:
             try:
-                with open(tmp_state_file, 'w', encoding='utf-8') as f:
+                with open(tmp_state_file, "w", encoding="utf-8") as f:
                     json.dump(state, f, indent=2)
                     f.flush()
                     os.fsync(f.fileno())

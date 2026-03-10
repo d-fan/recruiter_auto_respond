@@ -1,7 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     """Configuration for the application."""
+
     LLM_API_URL: str = "http://localhost:8080/v1"
     LLM_API_KEY: str = "sk-no-key-required"
     LLM_MAX_CONTEXT: int = 70000
@@ -11,5 +13,6 @@ class Settings(BaseSettings):
     PARALLEL_LIMIT: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
 
 settings = Settings()

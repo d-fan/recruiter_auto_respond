@@ -1,8 +1,11 @@
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
+
 
 class SheetsClient:
     """Client for syncing results to Google Sheets."""
+
     def __init__(self, service: Any | None = None) -> None:
         self.service = service
 
