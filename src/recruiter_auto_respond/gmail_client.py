@@ -67,12 +67,19 @@ class GmailClient:
                                 return body
                 return payload.get("body", {}).get("data", "")
 
+            def _decode_base64url(data: str) -> bytes:
+                """Decode a base64url string, adding padding if necessary."""
+                missing_padding = (-len(data)) % 4
+                if missing_padding:
+                    data += "=" * missing_padding
+                return base64.urlsafe_b64decode(data)
+
             encoded_body = _extract_body(msg.get("payload", {}))
             if not encoded_body:
                 return ""
 
-            # Decode from base64url
-            decoded_bytes = base64.urlsafe_b64decode(encoded_body)
+            # Decode from base64url, handling missing padding
+            decoded_bytes = _decode_base64url(encoded_body)
             return decoded_bytes.decode("utf-8")
 
         return await asyncio.to_thread(_fetch)
