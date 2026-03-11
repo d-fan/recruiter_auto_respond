@@ -61,6 +61,7 @@ known-first-party = ["recruiter_auto_respond"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+python_files = ["test_*.py", "conformance_*.py"]
 
 [tool.mypy]
 python_version = "3.12"

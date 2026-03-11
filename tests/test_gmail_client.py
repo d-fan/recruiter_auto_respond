@@ -6,50 +6,57 @@ from recruiter_auto_respond.gmail_client import GmailClient
 
 
 @pytest.fixture
-def mock_service():
+def mock_service() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def gmail_client(mock_service):
+def gmail_client(mock_service: MagicMock) -> GmailClient:
     return GmailClient(mock_service)
 
 
 @pytest.mark.asyncio
-async def test_fetch_messages_pagination(gmail_client, mock_service):
+async def test_fetch_messages_pagination(
+    gmail_client: GmailClient, mock_service: MagicMock
+) -> None:
     # Setup mock for multiple pages
     mock_list = mock_service.users().messages().list
-    
+
     # Page 1 response
     mock_list.return_value.execute.side_effect = [
         {
             "messages": [{"id": "msg1", "threadId": "t1"}],
-            "nextPageToken": "token2"
+            "nextPageToken": "token2",
         },
         # Page 2 response
         {
             "messages": [{"id": "msg2", "threadId": "t2"}],
             # No next token
-        }
+        },
     ]
 
     messages = await gmail_client.fetch_messages("query")
 
-    assert len(messages) == 2
+    expected_messages_count = 2
+    assert len(messages) == expected_messages_count
     assert messages[0]["id"] == "msg1"
     assert messages[1]["id"] == "msg2"
-    
+
     # Verify calls
-    mock_list.assert_has_calls([
-        call(userId="me", q="query", pageToken=None),
-        call().execute(),
-        call(userId="me", q="query", pageToken="token2"),
-        call().execute()
-    ])
+    mock_list.assert_has_calls(
+        [
+            call(userId="me", q="query", pageToken=None),
+            call().execute(),
+            call(userId="me", q="query", pageToken="token2"),
+            call().execute(),
+        ]
+    )
 
 
 @pytest.mark.asyncio
-async def test_fetch_message_body_multipart(gmail_client, mock_service):
+async def test_fetch_message_body_multipart(
+    gmail_client: GmailClient, mock_service: MagicMock
+) -> None:
     # Setup mock for complex multipart message
     mock_get = mock_service.users().messages().get().execute
     mock_get.return_value = {
@@ -58,13 +65,13 @@ async def test_fetch_message_body_multipart(gmail_client, mock_service):
             "parts": [
                 {
                     "mimeType": "text/html",
-                    "body": {"data": "PGh0bWw+aGk8L2h0bWw+"} # <html>hi</html>
+                    "body": {"data": "PGh0bWw+aGk8L2h0bWw+"},  # <html>hi</html>
                 },
                 {
                     "mimeType": "text/plain",
-                    "body": {"data": "SGVsbG8gd29ybGQ="} # Hello world
-                }
-            ]
+                    "body": {"data": "SGVsbG8gd29ybGQ="},  # Hello world
+                },
+            ],
         }
     }
 
@@ -74,7 +81,9 @@ async def test_fetch_message_body_multipart(gmail_client, mock_service):
 
 
 @pytest.mark.asyncio
-async def test_add_label(gmail_client, mock_service):
+async def test_add_label(
+    gmail_client: GmailClient, mock_service: MagicMock
+) -> None:
     mock_service.users().messages().modify().execute.return_value = {}
 
     await gmail_client.add_label("msg1", "label_id")
@@ -85,7 +94,9 @@ async def test_add_label(gmail_client, mock_service):
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_label_existing(gmail_client, mock_service):
+async def test_get_or_create_label_existing(
+    gmail_client: GmailClient, mock_service: MagicMock
+) -> None:
     mock_list = mock_service.users().labels().list().execute
     mock_list.return_value = {
         "labels": [
@@ -101,7 +112,9 @@ async def test_get_or_create_label_existing(gmail_client, mock_service):
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_label_new(gmail_client, mock_service):
+async def test_get_or_create_label_new(
+    gmail_client: GmailClient, mock_service: MagicMock
+) -> None:
     mock_list = mock_service.users().labels().list().execute
     mock_list.return_value = {"labels": [{"name": "INBOX", "id": "INBOX"}]}
 

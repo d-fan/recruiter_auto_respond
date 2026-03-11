@@ -30,7 +30,7 @@ SHEETS_APPEND_RESPONSE = {
 }
 
 
-def test_conformance():
+def test_conformance() -> None:
     # Validate structure of SHEETS_GET_RESPONSE
     assert isinstance(SHEETS_GET_RESPONSE, dict)
     assert set(SHEETS_GET_RESPONSE.keys()).issuperset(

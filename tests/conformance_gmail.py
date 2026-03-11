@@ -4,6 +4,8 @@ This file documents the expected structure of Gmail API responses.
 Based on official Google API documentation.
 """
 
+from typing import Any
+
 # Expected structure for messages.list
 MESSAGES_LIST_RESPONSE = {
     "messages": [
@@ -37,7 +39,7 @@ MESSAGES_GET_RESPONSE = {
 }
 
 
-def _validate_messages_list_response(response):
+def _validate_messages_list_response(response: dict[str, Any]) -> None:
     # Basic structural validation for a Gmail messages.list response
     assert isinstance(response, dict)
     assert "messages" in response
@@ -58,7 +60,7 @@ def _validate_messages_list_response(response):
     assert isinstance(response["resultSizeEstimate"], int)
 
 
-def _validate_messages_get_response(response):
+def _validate_messages_get_response(response: dict[str, Any]) -> None:
     # Basic structural validation for a Gmail messages.get response
     assert isinstance(response, dict)
 
@@ -113,7 +115,7 @@ def _validate_messages_get_response(response):
     assert isinstance(response["sizeEstimate"], int)
 
 
-def test_conformance():
+def test_conformance() -> None:
     # This test validates that the documented example responses conform
     # to the expected Gmail API response schema at a basic structural level.
     _validate_messages_list_response(MESSAGES_LIST_RESPONSE)

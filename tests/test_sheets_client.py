@@ -6,26 +6,22 @@ from recruiter_auto_respond.sheets_client import SheetsClient
 
 
 @pytest.fixture
-def mock_service():
+def mock_service() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def sheets_client(mock_service):
+def sheets_client(mock_service: MagicMock) -> SheetsClient:
     return SheetsClient(mock_service)
 
 
 @pytest.mark.asyncio
-async def test_get_message_ids(sheets_client, mock_service):
+async def test_get_message_ids(
+    sheets_client: SheetsClient, mock_service: MagicMock
+) -> None:
     # Setup mock response for spreadsheets().values().get().execute()
     mock_get = mock_service.spreadsheets().values().get().execute
-    mock_get.return_value = {
-        "values": [
-            ["msg1"],
-            ["msg2"],
-            ["msg3"],
-        ]
-    }
+    mock_get.return_value = {"values": [["msg1"], ["msg2"], ["msg3"]]}
 
     message_ids = await sheets_client.get_message_ids("sheet_id")
 
@@ -36,7 +32,9 @@ async def test_get_message_ids(sheets_client, mock_service):
 
 
 @pytest.mark.asyncio
-async def test_append_row(sheets_client, mock_service):
+async def test_append_row(
+    sheets_client: SheetsClient, mock_service: MagicMock
+) -> None:
     mock_append = mock_service.spreadsheets().values().append().execute
     mock_append.return_value = {}
 
