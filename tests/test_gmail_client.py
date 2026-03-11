@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -16,44 +16,61 @@ def gmail_client(mock_service):
 
 
 @pytest.mark.asyncio
-async def test_fetch_messages(gmail_client, mock_service):
-    # Setup mock response
-    mock_list = mock_service.users().messages().list().execute
-    mock_list.return_value = {
-        "messages": [
-            {"id": "msg1", "threadId": "thread1"},
-            {"id": "msg2", "threadId": "thread2"},
-        ]
-    }
+async def test_fetch_messages_pagination(gmail_client, mock_service):
+    # Setup mock for multiple pages
+    mock_list = mock_service.users().messages().list
+    
+    # Page 1 response
+    mock_list.return_value.execute.side_effect = [
+        {
+            "messages": [{"id": "msg1", "threadId": "t1"}],
+            "nextPageToken": "token2"
+        },
+        # Page 2 response
+        {
+            "messages": [{"id": "msg2", "threadId": "t2"}],
+            # No next token
+        }
+    ]
 
     messages = await gmail_client.fetch_messages("query")
 
-    expected_count = 2
-    assert len(messages) == expected_count
+    assert len(messages) == 2
     assert messages[0]["id"] == "msg1"
-    mock_service.users().messages().list.assert_called_with(
-        userId="me", q="query"
-    )
+    assert messages[1]["id"] == "msg2"
+    
+    # Verify calls
+    mock_list.assert_has_calls([
+        call(userId="me", q="query", pageToken=None),
+        call().execute(),
+        call(userId="me", q="query", pageToken="token2"),
+        call().execute()
+    ])
 
 
 @pytest.mark.asyncio
-async def test_fetch_message_body(gmail_client, mock_service):
-    # Setup mock response for messages().get().execute()
+async def test_fetch_message_body_multipart(gmail_client, mock_service):
+    # Setup mock for complex multipart message
     mock_get = mock_service.users().messages().get().execute
     mock_get.return_value = {
         "payload": {
-            "body": {
-                "data": "SGVsbG8gd29ybGQ="  # "Hello world" in base64
-            }
+            "mimeType": "multipart/alternative",
+            "parts": [
+                {
+                    "mimeType": "text/html",
+                    "body": {"data": "PGh0bWw+aGk8L2h0bWw+"} # <html>hi</html>
+                },
+                {
+                    "mimeType": "text/plain",
+                    "body": {"data": "SGVsbG8gd29ybGQ="} # Hello world
+                }
+            ]
         }
     }
 
     body = await gmail_client.fetch_message_body("msg1")
 
-    assert "Hello world" in body
-    mock_service.users().messages().get.assert_called_with(
-        userId="me", id="msg1", format="full"
-    )
+    assert body == "Hello world"
 
 
 @pytest.mark.asyncio

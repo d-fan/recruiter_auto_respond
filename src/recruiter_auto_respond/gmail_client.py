@@ -21,19 +21,28 @@ class GmailClient:
         reraise=True,
     )
     async def fetch_messages(self, query: str) -> list[dict[str, Any]]:
-        """Fetch messages matching the query."""
+        """Fetch all messages matching the query, handling pagination."""
         logging.info(f"Fetching messages for query: {query}")
 
-        def _fetch() -> list[dict[str, Any]]:
-            results = (
-                self.service.users()
-                .messages()
-                .list(userId="me", q=query)
-                .execute()
-            )
-            return cast(list[dict[str, Any]], results.get("messages", []))
+        def _fetch_all() -> list[dict[str, Any]]:
+            messages: list[dict[str, Any]] = []
+            next_page_token = None
 
-        return await asyncio.to_thread(_fetch)
+            while True:
+                results = (
+                    self.service.users()
+                    .messages()
+                    .list(userId="me", q=query, pageToken=next_page_token)
+                    .execute()
+                )
+                messages.extend(results.get("messages", []))
+                next_page_token = results.get("nextPageToken")
+                if not next_page_token:
+                    break
+
+            return messages
+
+        return await asyncio.to_thread(_fetch_all)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -43,7 +52,7 @@ class GmailClient:
     async def fetch_message_body(self, message_id: str) -> str:
         """Fetch the body of a specific message.
 
-        Extracts plain text content from the message.
+        Extracts plain text content from the message, handling multipart structures.
         """
         logging.info(f"Fetching body for message: {message_id}")
 
@@ -55,17 +64,25 @@ class GmailClient:
                 .execute()
             )
 
-            # Extraction logic for message body
             def _extract_body(payload: dict[str, Any]) -> str:
+                """Recursively extract text/plain part from payload."""
+                mime_type = payload.get("mimeType")
+                body_data = payload.get("body", {}).get("data", "")
+
+                if mime_type == "text/plain" and body_data:
+                    return cast(str, body_data)
+
                 if "parts" in payload:
                     for part in payload["parts"]:
-                        if part["mimeType"] == "text/plain":
-                            return cast(str, part.get("body", {}).get("data", ""))
-                        if "parts" in part:
-                            body = _extract_body(part)
-                            if body:
-                                return body
-                return cast(str, payload.get("body", {}).get("data", ""))
+                        found_body = _extract_body(part)
+                        if found_body:
+                            return found_body
+
+                return ""
+
+            encoded_body = _extract_body(msg.get("payload", {}))
+            if not encoded_body:
+                return ""
 
             def _decode_base64url(data: str) -> bytes:
                 """Decode a base64url string, adding padding if necessary."""
@@ -74,13 +91,13 @@ class GmailClient:
                     data += "=" * missing_padding
                 return base64.urlsafe_b64decode(data)
 
-            encoded_body = _extract_body(msg.get("payload", {}))
-            if not encoded_body:
-                return ""
-
             # Decode from base64url, handling missing padding
-            decoded_bytes = _decode_base64url(encoded_body)
-            return decoded_bytes.decode("utf-8")
+            try:
+                decoded_bytes = _decode_base64url(encoded_body)
+                return decoded_bytes.decode("utf-8", errors="replace")
+            except Exception as e:
+                logging.warning(f"Failed to decode body for message {message_id}: {e}")
+                return ""
 
         return await asyncio.to_thread(_fetch)
 
@@ -91,7 +108,7 @@ class GmailClient:
     )
     async def add_label(self, message_id: str, label_id: str) -> None:
         """Add a label to a specific message."""
-        logging.info(f"Adding label '{label_id}' to message {message_id}")
+        logging.debug(f"Adding label '{label_id}' to message {message_id}")
 
         def _add() -> None:
             self.service.users().messages().modify(
