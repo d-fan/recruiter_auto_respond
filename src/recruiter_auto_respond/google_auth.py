@@ -25,7 +25,7 @@ def get_google_services(
     # created automatically when the authorization flow completes for the first
     # time.
     if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)  # type: ignore[no-untyped-call]
 
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:

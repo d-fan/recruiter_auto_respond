@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import logging
-from typing import Any
+from typing import Any, cast
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -31,7 +31,7 @@ class GmailClient:
                 .list(userId="me", q=query)
                 .execute()
             )
-            return results.get("messages", [])
+            return cast(list[dict[str, Any]], results.get("messages", []))
 
         return await asyncio.to_thread(_fetch)
 
@@ -60,12 +60,12 @@ class GmailClient:
                 if "parts" in payload:
                     for part in payload["parts"]:
                         if part["mimeType"] == "text/plain":
-                            return part.get("body", {}).get("data", "")
+                            return cast(str, part.get("body", {}).get("data", ""))
                         if "parts" in part:
                             body = _extract_body(part)
                             if body:
                                 return body
-                return payload.get("body", {}).get("data", "")
+                return cast(str, payload.get("body", {}).get("data", ""))
 
             def _decode_base64url(data: str) -> bytes:
                 """Decode a base64url string, adding padding if necessary."""
@@ -114,7 +114,7 @@ class GmailClient:
             labels = results.get("labels", [])
             for label in labels:
                 if label["name"].lower() == label_name.lower():
-                    return label["id"]
+                    return cast(str, label["id"])
 
             # Not found, create it
             label_body = {
@@ -128,6 +128,6 @@ class GmailClient:
                 .create(userId="me", body=label_body)
                 .execute()
             )
-            return new_label["id"]
+            return cast(str, new_label["id"])
 
         return await asyncio.to_thread(_get_create)
