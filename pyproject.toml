@@ -13,6 +13,7 @@ requires-python = ">=3.10"
 dependencies = [
     "google-api-python-client",
     "google-auth-oauthlib",
+    "google-auth-httplib2",
     "httpx",
     "pydantic-settings",
     "tenacity",
@@ -23,6 +24,8 @@ dev = [
     "ruff",
     "mypy",
     "pre-commit",
+    "pytest",
+    "pytest-asyncio",
     "types-requests",
     "types-setuptools",
 ]
@@ -54,6 +57,11 @@ ignore = []
 
 [tool.ruff.lint.isort]
 known-first-party = ["recruiter_auto_respond"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py", "conformance_*.py"]
 
 [tool.mypy]
 python_version = "3.12"
