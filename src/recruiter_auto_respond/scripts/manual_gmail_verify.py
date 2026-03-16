@@ -71,7 +71,9 @@ async def verify_gmail_operations() -> None:
         except Exception:
             logger.exception("Error during fetch_message_body")
     else:
-        logger.warning("MESSAGE_ID is not set. Skipping fetch_message_body verification.")
+        logger.warning(
+            "MESSAGE_ID is not set. Skipping fetch_message_body verification."
+        )
 
     logger.info("Manual Gmail verification complete.")
 

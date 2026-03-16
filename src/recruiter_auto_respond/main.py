@@ -38,9 +38,7 @@ async def main() -> None:
         return
 
     # 2. Fetch messages from Gmail
-    logger.info(
-        "Fetching new messages from Gmail...", extra={"phase": "phase-2"}
-    )
+    logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
     # query = f"-label:\"{settings.GMAIL_LABEL_NAME}\" after:{last_run}"
     # messages = await gmail_client.fetch_messages(query)
 
@@ -51,9 +49,7 @@ async def main() -> None:
     logger.info("Updating Gmail labels...", extra={"phase": "phase-4"})
 
     # 5. Sync results to Google Sheets
-    logger.info(
-        "Syncing results to Google Sheets...", extra={"phase": "phase-5"}
-    )
+    logger.info("Syncing results to Google Sheets...", extra={"phase": "phase-5"})
 
     # 6. Update local state
     logger.info("Updating local state...", extra={"phase": "phase-6"})
