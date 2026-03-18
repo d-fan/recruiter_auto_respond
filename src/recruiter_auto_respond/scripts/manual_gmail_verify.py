@@ -10,8 +10,8 @@ from recruiter_auto_respond.google_auth import get_google_services_async
 
 # --- MANUAL VERIFICATION INPUTS ---
 # Replace these values with your actual query/ID for verification.
-SEARCH_QUERY = "YOUR_QUERY_HERE"
-MESSAGE_ID = "YOUR_MSG_ID_HERE"
+SEARCH_QUERY = 'newer_than:7d -label:"! Jobs/2026" (category:primary OR category:updates)'
+MESSAGE_ID = "19d031269d6b3104"
 # -----------------------------------
 
 logging.basicConfig(
@@ -54,7 +54,8 @@ async def verify_gmail_operations() -> None:
         except Exception:
             logger.exception("Error during fetch_messages")
     else:
-        logger.warning("SEARCH_QUERY is not set. Skipping fetch_messages verification.")
+        logger.warning(
+            "SEARCH_QUERY is not set. Skipping fetch_messages verification.")
 
     # 3. Verify: fetch_message_body
     if MESSAGE_ID and MESSAGE_ID != "YOUR_MSG_ID_HERE":
