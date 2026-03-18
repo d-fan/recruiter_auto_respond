@@ -5,17 +5,17 @@ import pytest
 from recruiter_auto_respond.gmail_client import GmailClient
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[untyped-decorator]
 def mock_service() -> MagicMock:
     return MagicMock()
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[untyped-decorator]
 def gmail_client(mock_service: MagicMock) -> GmailClient:
     return GmailClient(mock_service)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_fetch_messages_pagination(
     gmail_client: GmailClient, mock_service: MagicMock
 ) -> None:
@@ -53,7 +53,7 @@ async def test_fetch_messages_pagination(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_fetch_message_body_multipart(
     gmail_client: GmailClient, mock_service: MagicMock
 ) -> None:
@@ -80,10 +80,8 @@ async def test_fetch_message_body_multipart(
     assert body == "Hello world"
 
 
-@pytest.mark.asyncio
-async def test_add_label(
-    gmail_client: GmailClient, mock_service: MagicMock
-) -> None:
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+async def test_add_label(gmail_client: GmailClient, mock_service: MagicMock) -> None:
     mock_service.users().messages().modify().execute.return_value = {}
 
     await gmail_client.add_label("msg1", "label_id")
@@ -93,7 +91,7 @@ async def test_add_label(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_get_or_create_label_existing(
     gmail_client: GmailClient, mock_service: MagicMock
 ) -> None:
@@ -111,7 +109,7 @@ async def test_get_or_create_label_existing(
     mock_service.users().labels().create.assert_not_called()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_get_or_create_label_new(
     gmail_client: GmailClient, mock_service: MagicMock
 ) -> None:

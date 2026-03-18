@@ -34,9 +34,7 @@ def get_google_services(
             creds.refresh(Request())
         else:
             logging.info("Initial Google OAuth2 flow required.")
-            flow = InstalledAppFlow.from_client_secrets_file(
-                credentials_path, SCOPES
-            )
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
             creds = flow.run_local_server(port=0)
 
         # Save the credentials for the next run
@@ -54,6 +52,4 @@ async def get_google_services_async(
     token_path: str = "token.json",
 ) -> tuple[Any, Any]:
     """Async wrapper for get_google_services."""
-    return await asyncio.to_thread(
-        get_google_services, credentials_path, token_path
-    )
+    return await asyncio.to_thread(get_google_services, credentials_path, token_path)

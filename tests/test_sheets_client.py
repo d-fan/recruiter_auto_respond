@@ -5,17 +5,17 @@ import pytest
 from recruiter_auto_respond.sheets_client import SheetsClient
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[untyped-decorator]
 def mock_service() -> MagicMock:
     return MagicMock()
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[untyped-decorator]
 def sheets_client(mock_service: MagicMock) -> SheetsClient:
     return SheetsClient(mock_service)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_get_message_ids(
     sheets_client: SheetsClient, mock_service: MagicMock
 ) -> None:
@@ -31,10 +31,8 @@ async def test_get_message_ids(
     )
 
 
-@pytest.mark.asyncio
-async def test_append_row(
-    sheets_client: SheetsClient, mock_service: MagicMock
-) -> None:
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+async def test_append_row(sheets_client: SheetsClient, mock_service: MagicMock) -> None:
     mock_append = mock_service.spreadsheets().values().append().execute
     mock_append.return_value = {}
 
