@@ -6,12 +6,25 @@ import logging
 import httpx
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
 
 from .config import settings
+
+
+def _is_transient_error(exception: Exception) -> bool:
+    """Predicate for tenacity to retry only on transient failures.
+
+    Retries on network-level errors and HTTP 5xx or 429 status codes.
+    """
+    if isinstance(exception, httpx.HTTPStatusError):
+        # Retry on 5xx or 429 (Rate Limit)
+        return (
+            exception.response.status_code >= 500 or exception.response.status_code == 429
+        )
+    return isinstance(exception, httpx.RequestError)
 
 
 class LLMClient:
@@ -60,7 +73,7 @@ class LLMClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
+        retry=retry_if_exception(_is_transient_error),
         reraise=True,
     )
     async def _call_llm(self, body: str) -> bool:
@@ -100,7 +113,15 @@ class LLMClient:
         try:
             content = data["choices"][0]["message"]["content"]
             result = json.loads(content)
-            return bool(result.get("isRecruiter", False))
+            is_recruiter = result.get("isRecruiter")
+
+            if not isinstance(is_recruiter, bool):
+                logging.error(
+                    "LLM response 'isRecruiter' field is not a boolean: %s", is_recruiter
+                )
+                return False
+
+            return is_recruiter
         except (KeyError, IndexError, json.JSONDecodeError) as e:
             logging.error("Failed to parse LLM response: %s", e)
             return False
