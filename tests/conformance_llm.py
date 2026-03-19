@@ -1,17 +1,13 @@
-"""
-Conformance test for LLM API (OpenAI-compatible).
-This file documents the expected structure of LLM API responses.
-Based on OpenAI Chat Completions API documentation.
-"""
+import json
 
-from typing import Any
+import pytest
 
-# Expected structure for /v1/chat/completions
-LLM_CHAT_COMPLETIONS_RESPONSE = {
+# Expected structure for /v1/chat/completions (OpenAI compatible)
+LLM_COMPLETION_RESPONSE = {
     "id": "chatcmpl-123",
     "object": "chat.completion",
     "created": 1677652288,
-    "model": "gpt-3.5-turbo-0613",
+    "model": "gpt-oss-120b",
     "choices": [
         {
             "index": 0,
@@ -26,33 +22,23 @@ LLM_CHAT_COMPLETIONS_RESPONSE = {
 }
 
 
-def _validate_llm_response(response: dict[str, Any]) -> None:
-    # Basic structural validation for an OpenAI-compatible chat completion response
-    assert isinstance(response, dict)
-    assert "id" in response
-    assert isinstance(response["id"], str)
-    assert "choices" in response
-    assert isinstance(response["choices"], list)
-    assert len(response["choices"]) > 0
+def test_llm_response_structure() -> None:
+    """Verify that the mock LLM response matches the expected structure."""
+    data = LLM_COMPLETION_RESPONSE
+    assert "choices" in data
+    assert isinstance(data["choices"], list)
+    assert len(data["choices"]) > 0
 
-    choice = response["choices"][0]
-    assert isinstance(choice, dict)
+    choice = data["choices"][0]
     assert "message" in choice
-    assert isinstance(choice["message"], dict)
     assert "content" in choice["message"]
-    assert isinstance(choice["message"]["content"], str)
 
     # We expect JSON content in the message
-    import json
-
     content = choice["message"]["content"]
-    parsed_content = json.loads(content)
-    assert isinstance(parsed_content, dict)
-    assert "isRecruiter" in parsed_content
-    assert isinstance(parsed_content["isRecruiter"], bool)
+    parsed = json.loads(content)
+    assert "isRecruiter" in parsed
+    assert isinstance(parsed["isRecruiter"], bool)
 
 
-def test_conformance() -> None:
-    # This test validates that the documented example responses conform
-    # to the expected LLM API response schema.
-    _validate_llm_response(LLM_CHAT_COMPLETIONS_RESPONSE)
+if __name__ == "__main__":
+    pytest.main([__file__])

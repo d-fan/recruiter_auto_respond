@@ -14,15 +14,18 @@ from tenacity import (
 from .config import settings
 
 
-def _is_transient_error(exception: Exception) -> bool:
+def _is_transient_error(exception: BaseException) -> bool:
     """Predicate for tenacity to retry only on transient failures.
 
     Retries on network-level errors and HTTP 5xx or 429 status codes.
     """
     if isinstance(exception, httpx.HTTPStatusError):
         # Retry on 5xx or 429 (Rate Limit)
+        status_500 = 500
+        status_429 = 429
         return (
-            exception.response.status_code >= 500 or exception.response.status_code == 429
+            exception.response.status_code >= status_500
+            or exception.response.status_code == status_429
         )
     return isinstance(exception, httpx.RequestError)
 
@@ -117,7 +120,8 @@ class LLMClient:
 
             if not isinstance(is_recruiter, bool):
                 logging.error(
-                    "LLM response 'isRecruiter' field is not a boolean: %s", is_recruiter
+                    "LLM response 'isRecruiter' field is not a boolean: %s",
+                    is_recruiter,
                 )
                 return False
 
