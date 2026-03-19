@@ -10,10 +10,10 @@ from typing import Any
 MESSAGES_LIST_RESPONSE = {
     "messages": [
         {"id": "msg_123", "threadId": "thread_123"},
-        {"id": "msg_456", "threadId": "thread_456"}
+        {"id": "msg_456", "threadId": "thread_456"},
     ],
     "nextPageToken": "token_abc",
-    "resultSizeEstimate": 2
+    "resultSizeEstimate": 2,
 }
 
 # Expected structure for messages.get
@@ -28,14 +28,11 @@ MESSAGES_GET_RESPONSE = {
         "filename": "",
         "headers": [
             {"name": "Subject", "value": "Test Subject"},
-            {"name": "From", "value": "recruiter@example.com"}
+            {"name": "From", "value": "recruiter@example.com"},
         ],
-        "body": {
-            "size": 28,
-            "data": "SGVsbG8sIHRoaXMgaXMgYSB0ZXN0IGVtYWls..."
-        }
+        "body": {"size": 28, "data": "SGVsbG8sIHRoaXMgaXMgYSB0ZXN0IGVtYWls..."},
     },
-    "sizeEstimate": 150
+    "sizeEstimate": 150,
 }
 
 

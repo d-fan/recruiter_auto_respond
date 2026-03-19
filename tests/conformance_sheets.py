@@ -9,11 +9,7 @@ Based on official Google API documentation.
 SHEETS_GET_RESPONSE = {
     "range": "Emails!B2:B100",
     "majorDimension": "ROWS",
-    "values": [
-        ["msg1"],
-        ["msg2"],
-        ["msg3"]
-    ]
+    "values": [["msg1"], ["msg2"], ["msg3"]],
 }
 
 # Expected structure for spreadsheets.values.append
@@ -25,8 +21,8 @@ SHEETS_APPEND_RESPONSE = {
         "updatedRange": "Emails!A11:G11",
         "updatedRows": 1,
         "updatedColumns": 7,
-        "updatedCells": 7
-    }
+        "updatedCells": 7,
+    },
 }
 
 
