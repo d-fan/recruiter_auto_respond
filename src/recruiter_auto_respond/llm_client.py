@@ -18,8 +18,16 @@ class LLMClient:
     """Client for classification using a local LLM (e.g., llama.cpp)."""
 
     def __init__(self, api_url: str) -> None:
-        self.api_url = api_url
+        """Initialize the LLM client.
+
+        Args:
+            api_url: The base URL of the LLM API (e.g., http://localhost:8080/v1).
+        """
+        if not api_url.endswith("/"):
+            api_url += "/"
+        self.api_url = httpx.URL(api_url)
         self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+        self.client = httpx.AsyncClient(timeout=60.0)
         self.system_prompt = (
             "You are an expert recruitment assistant. Analyze the "
             "email content provided.\n"
@@ -33,8 +41,16 @@ class LLMClient:
             'Respond ONLY with a JSON object: {"isRecruiter": true/false}'
         )
 
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self.client.aclose()
+
     def _get_headers(self) -> dict[str, str]:
-        """Generate authentication headers based on settings."""
+        """Generate authentication headers based on settings.
+
+        Returns:
+            A dictionary containing the Authorization header.
+        """
         if settings.LLM_USER and settings.LLM_PASS:
             auth_str = f"{settings.LLM_USER}:{settings.LLM_PASS}"
             encoded_auth = base64.b64encode(auth_str.encode()).decode()
@@ -48,43 +64,64 @@ class LLMClient:
         reraise=True,
     )
     async def _call_llm(self, body: str) -> bool:
-        """Internal method to call the LLM API with retries."""
+        """Internal method to call the LLM API with retries.
+
+        Args:
+            body: The email body content to classify.
+
+        Returns:
+            True if the message is from a recruiter, False otherwise.
+
+        Raises:
+            httpx.HTTPStatusError: If the server returns an error response.
+            httpx.RequestError: If there's a network-level error.
+        """
         # Simple character-based truncation to stay within context limits
         truncated_body = body[: settings.LLM_MAX_CONTEXT]
+        url = self.api_url.join("chat/completions")
 
-        async with httpx.AsyncClient() as client:
-            logging.info(f"Posting to {self.api_url}/chat/completions")
-            response = await client.post(
-                f"{self.api_url}/chat/completions",
-                headers=self._get_headers(),
-                json={
-                    "model": "gpt-oss-120b",
-                    "messages": [
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": truncated_body},
-                    ],
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.1,
-                },
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            data = response.json()
+        logging.info("Posting to %s", url)
+        response = await self.client.post(
+            url,
+            headers=self._get_headers(),
+            json={
+                "model": settings.LLM_MODEL_NAME,
+                "messages": [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": truncated_body},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
 
-            try:
-                content = data["choices"][0]["message"]["content"]
-                result = json.loads(content)
-                return bool(result.get("isRecruiter", False))
-            except (KeyError, IndexError, json.JSONDecodeError) as e:
-                logging.error(f"Failed to parse LLM response: {e}")
-                return False
+        try:
+            content = data["choices"][0]["message"]["content"]
+            result = json.loads(content)
+            return bool(result.get("isRecruiter", False))
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            logging.error("Failed to parse LLM response: %s", e)
+            return False
 
     async def classify_message(self, body: str) -> bool:
-        """Determine if a message is from a recruiter."""
+        """Determine if a message is from a recruiter.
+
+        This method uses a semaphore to limit parallel requests and
+        handles retries internally via `_call_llm`.
+
+        Args:
+            body: The email body content to classify.
+
+        Returns:
+            True if the message is identified as being from a recruiter,
+            False otherwise. Returns False if all retries fail.
+        """
         logging.info("Classifying message with LLM...")
         async with self.semaphore:
             try:
                 return await self._call_llm(body)
             except Exception as e:
-                logging.error(f"LLM classification failed after retries: {e}")
+                logging.error("LLM classification failed after retries: %s", e)
                 return False
