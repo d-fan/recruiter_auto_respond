@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     GOOGLE_APPLICATION_CREDENTIALS: str = "credentials.json"
     PARALLEL_LIMIT: int = 10
     STATE_FILE: str = "state.json"
+    DEFAULT_LOOKBACK_DAYS: int = 7
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

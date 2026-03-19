@@ -49,6 +49,31 @@ class GmailClient:
         wait=wait_exponential(multiplier=1, min=4, max=10),
         reraise=True,
     )
+    async def fetch_message_metadata(self, message_id: str) -> dict[str, Any]:
+        """Fetch metadata for a specific message (e.g., internalDate)."""
+        logging.debug(f"Fetching metadata for message: {message_id}")
+
+        def _fetch() -> dict[str, Any]:
+            return cast(
+                dict[str, Any],
+                self.service.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=message_id,
+                    format="minimal",
+                    fields="id,threadId,internalDate",
+                )
+                .execute(),
+            )
+
+        return await asyncio.to_thread(_fetch)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
     async def fetch_message_body(self, message_id: str) -> str:
         """Fetch the body of a specific message.
 

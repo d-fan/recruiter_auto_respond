@@ -2,7 +2,10 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
+
+from recruiter_auto_respond.config import settings
 
 
 class StateManager:
@@ -31,8 +34,13 @@ class StateManager:
                         )
 
                     return cast(dict[str, Any], data)
-            # Default to a safe baseline if state doesn't exist
-            return {"last_run_timestamp": "1970-01-01T00:00:00Z"}
+
+            # Default to a 7-day lookback if state doesn't exist
+            lookback_days = getattr(settings, "DEFAULT_LOOKBACK_DAYS", 7)
+            default_timestamp = (
+                datetime.now(timezone.utc) - timedelta(days=lookback_days)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return {"last_run_timestamp": default_timestamp}
 
         return await asyncio.to_thread(_load)
 
@@ -55,3 +63,30 @@ class StateManager:
                 raise
 
         await asyncio.to_thread(_save)
+
+    async def update_watermark(self, results: list[tuple[str, bool]]) -> str:
+        """Update the watermark based on consecutive successful threads.
+
+        Args:
+            results: A list of (timestamp, success_flag) tuples,
+                    sorted by timestamp.
+
+        Returns:
+            The new watermark timestamp.
+        """
+        state = await self.load_state()
+        current_watermark = cast(str, state["last_run_timestamp"])
+        new_watermark = current_watermark
+
+        for ts, success in results:
+            if success:
+                new_watermark = ts
+            else:
+                # Hard stop at the first failure
+                break
+
+        if new_watermark != current_watermark:
+            state["last_run_timestamp"] = new_watermark
+            await self.save_state(state)
+
+        return new_watermark
