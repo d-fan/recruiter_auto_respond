@@ -107,9 +107,15 @@ async def main() -> None:
         logger.info("No new messages to process.", extra={"phase": "setup"})
         return
 
-    # 3. Fetch metadata for sorting
+    # 3. Fetch metadata for sorting with parallel limit
     logger.info("Fetching metadata for sorting...", extra={"phase": "phase-3"})
-    metadata_tasks = [gmail_client.fetch_message_metadata(m["id"]) for m in messages]
+    semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+
+    async def fetch_with_semaphore(message_id: str) -> dict[str, Any]:
+        async with semaphore:
+            return await gmail_client.fetch_message_metadata(message_id)
+
+    metadata_tasks = [fetch_with_semaphore(m["id"]) for m in messages]
     messages_with_metadata = await asyncio.gather(*metadata_tasks)
 
     # Sort oldest to newest
