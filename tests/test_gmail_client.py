@@ -125,3 +125,27 @@ async def test_get_or_create_label_new(
 
     assert label_id == "new_label_id"
     mock_service.users().labels().create.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_fetch_message_metadata(
+    gmail_client: GmailClient, mock_service: MagicMock
+) -> None:
+    mock_get = mock_service.users().messages().get
+    mock_get.return_value.execute.return_value = {
+        "id": "msg1",
+        "threadId": "t1",
+        "internalDate": "1616198400000",
+    }
+
+    metadata = await gmail_client.fetch_message_metadata("msg1")
+
+    assert metadata["id"] == "msg1"
+    assert metadata["internalDate"] == "1616198400000"
+
+    mock_get.assert_called_with(
+        userId="me",
+        id="msg1",
+        format="minimal",
+        fields="id,threadId,internalDate",
+    )

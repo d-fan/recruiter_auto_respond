@@ -58,8 +58,12 @@ async def process_messages(
             else:
                 logger.info(f"Skipped message {message_id} (Not Recruiter).")
 
-            # Record success (labeled or determined not to label)
-            results.append((msg_ts_iso, True))
+            # Record success only when the recruiter label was applied
+            # This ensures we don't advance past messages we didn't label,
+            # so they can be re-evaluated if non-recruiter logic changes,
+            # OR they stay "unprocessed" in the query.
+            # NOTE: The query -label:"{LABEL_NAME}" will still find them.
+            results.append((msg_ts_iso, is_recruiter))
 
         except Exception:
             logger.exception(f"Failed to process message {message_id}")
@@ -109,17 +113,24 @@ async def main() -> None:
 
     # 3. Fetch metadata for sorting with parallel limit
     logger.info("Fetching metadata for sorting...", extra={"phase": "phase-3"})
-    semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+    try:
+        semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
 
-    async def fetch_with_semaphore(message_id: str) -> dict[str, Any]:
-        async with semaphore:
-            return await gmail_client.fetch_message_metadata(message_id)
+        async def fetch_with_semaphore(message_id: str) -> dict[str, Any]:
+            async with semaphore:
+                return await gmail_client.fetch_message_metadata(message_id)
 
-    metadata_tasks = [fetch_with_semaphore(m["id"]) for m in messages]
-    messages_with_metadata = await asyncio.gather(*metadata_tasks)
+        metadata_tasks = [fetch_with_semaphore(m["id"]) for m in messages]
+        messages_with_metadata = await asyncio.gather(*metadata_tasks)
 
-    # Sort oldest to newest
-    messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
+        # Sort oldest to newest
+        messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
+    except Exception:
+        logger.exception(
+            "Failed to fetch or sort message metadata",
+            extra={"phase": "phase-3"},
+        )
+        return
 
     # 4. Get label ID
     label_id = await gmail_client.get_or_create_label(settings.GMAIL_LABEL_NAME)
