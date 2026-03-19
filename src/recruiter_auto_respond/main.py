@@ -34,11 +34,18 @@ async def process_messages(
     llm_client: LLMClient,
     label_id: str,
 ) -> list[tuple[str, bool]]:
-    """Process messages one by one and return results."""
-    logger = logging.getLogger(__name__)
-    results: list[tuple[str, bool]] = []
+    """Process messages in parallel and return results.
 
-    for m in messages_with_metadata:
+    Respects the "Hard Stop" requirement by stopping new work if a failure occurs.
+    """
+    logger = logging.getLogger(__name__)
+    stop_event = asyncio.Event()
+
+    async def process_single(m: dict[str, Any]) -> tuple[str, bool]:
+        if stop_event.is_set():
+            # If a hard stop was triggered, we don't process further.
+            return "", False
+
         message_id = m["id"]
         # Convert internalDate (ms) to ISO format
         msg_dt = datetime.fromtimestamp(int(m["internalDate"]) / 1000, tz=timezone.utc)
@@ -58,17 +65,27 @@ async def process_messages(
             else:
                 logger.info(f"Skipped message {message_id} (Not Recruiter).")
 
-            # Record success only when the recruiter label was applied
-            # This ensures we don't advance past messages we didn't label,
-            # so they can be re-evaluated if non-recruiter logic changes,
-            # OR they stay "unprocessed" in the query.
-            # NOTE: The query -label:"{LABEL_NAME}" will still find them.
-            results.append((msg_ts_iso, is_recruiter))
+            # Return success status
+            return msg_ts_iso, is_recruiter
 
         except Exception:
             logger.exception(f"Failed to process message {message_id}")
-            # Stop processing further messages to respect hard-stop
+            stop_event.set()
+            return "", False
+
+    # Create tasks for all messages. asyncio.gather will run them in parallel,
+    # and the semaphores in the clients will throttle the actual requests.
+    tasks = [process_single(m) for m in messages_with_metadata]
+    gathered_results = await asyncio.gather(*tasks)
+
+    # Filter out results that weren't processed due to hard stop or failure
+    # but maintain the order for the watermark logic.
+    results: list[tuple[str, bool]] = []
+    for ts, success in gathered_results:
+        if not ts:  # Indicates failure or hard stop
             break
+        results.append((ts, success))
+
     return results
 
 
@@ -114,13 +131,9 @@ async def main() -> None:
     # 3. Fetch metadata for sorting with parallel limit
     logger.info("Fetching metadata for sorting...", extra={"phase": "phase-3"})
     try:
-        semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
-
-        async def fetch_with_semaphore(message_id: str) -> dict[str, Any]:
-            async with semaphore:
-                return await gmail_client.fetch_message_metadata(message_id)
-
-        metadata_tasks = [fetch_with_semaphore(m["id"]) for m in messages]
+        metadata_tasks = [
+            gmail_client.fetch_message_metadata(m["id"]) for m in messages
+        ]
         messages_with_metadata = await asyncio.gather(*metadata_tasks)
 
         # Sort oldest to newest
