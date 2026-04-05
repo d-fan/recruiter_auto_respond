@@ -25,12 +25,22 @@ LLM_COMPLETION_RESPONSE = {
 def test_llm_response_structure() -> None:
     """Verify that the mock LLM response matches the expected structure."""
     data = LLM_COMPLETION_RESPONSE
+
+    # Top-level fields
+    assert "id" in data
+    assert isinstance(data["id"], str)
+    assert data["object"] == "chat.completion"
+    assert isinstance(data["created"], int)
+    assert isinstance(data["model"], str)
+
+    # Choices
     assert "choices" in data
     assert isinstance(data["choices"], list)
     assert len(data["choices"]) > 0
 
     choice = data["choices"][0]
     assert "message" in choice
+    assert choice["message"]["role"] == "assistant"
     assert "content" in choice["message"]
 
     # We expect JSON content in the message
@@ -38,6 +48,10 @@ def test_llm_response_structure() -> None:
     parsed = json.loads(content)
     assert "isRecruiter" in parsed
     assert isinstance(parsed["isRecruiter"], bool)
+
+    # Usage
+    assert "usage" in data
+    assert isinstance(data["usage"]["total_tokens"], int)
 
 
 if __name__ == "__main__":

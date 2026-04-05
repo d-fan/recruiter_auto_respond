@@ -75,7 +75,15 @@ class StateManager:
             The new watermark timestamp.
         """
         state = await self.load_state()
-        current_watermark = cast(str, state["last_run_timestamp"])
+        current_watermark = state.get("last_run_timestamp")
+
+        if not isinstance(current_watermark, str):
+            # Fallback to default if state is missing or corrupted
+            lookback_days = getattr(settings, "DEFAULT_LOOKBACK_DAYS", 7)
+            current_watermark = (
+                datetime.now(timezone.utc) - timedelta(days=lookback_days)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
         new_watermark = current_watermark
 
         for ts, success in results:

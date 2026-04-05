@@ -6,6 +6,7 @@ import httpx
 import pytest
 import respx
 from httpx import Response
+from tenacity.wait import wait_none
 
 from recruiter_auto_respond.config import settings
 from recruiter_auto_respond.llm_client import LLMClient
@@ -13,7 +14,9 @@ from recruiter_auto_respond.llm_client import LLMClient
 
 @pytest.fixture
 async def llm_client() -> AsyncGenerator[LLMClient, None]:
-    client = LLMClient(settings.LLM_API_URL)
+    # Use a fixed URL for tests to ensure respx matches consistently
+    # regardless of environment settings.
+    client = LLMClient("http://localhost:8080/v1")
     yield client
     await client.close()
 
@@ -103,10 +106,10 @@ async def test_retry_on_failure(
         Response(200, json=success_json),
     ]
 
-    # Patch retry wait to speed up test
-    monkeypatch.setattr(
-        "recruiter_auto_respond.llm_client.wait_exponential", lambda **kwargs: None
-    )
+    # Directly patch the wait configuration of the decorated function's retry object.
+    # The @retry decorator is evaluated at import, so monkeypatching wait_exponential
+    # at the module level doesn't affect it.
+    monkeypatch.setattr(llm_client._call_llm.retry, "wait", wait_none())
 
     result = await llm_client.classify_message("Hello")
     assert result is True
@@ -139,7 +142,9 @@ async def test_parallel_limit(
             200, json={"choices": [{"message": {"content": success_content}}]}
         )
 
-    respx.post("http://localhost:8080/v1/chat/completions").mock(side_effect=mock_handler)
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        side_effect=mock_handler
+    )
 
     tasks = [llm_client.classify_message(f"Msg {i}") for i in range(5)]
     results = await asyncio.gather(*tasks)

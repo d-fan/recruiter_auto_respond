@@ -47,9 +47,12 @@ async def process_messages(
             return "", False
 
         message_id = m["id"]
-        # Convert internalDate (ms) to ISO format
-        msg_dt = datetime.fromtimestamp(int(m["internalDate"]) / 1000, tz=timezone.utc)
-        msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Convert internalDate (ms) to ISO format with ms precision
+        # internalDate is ms since epoch
+        ms_timestamp = int(m["internalDate"])
+        msg_dt = datetime.fromtimestamp(ms_timestamp / 1000, tz=timezone.utc)
+        # Use ISO format with millisecond precision
+        msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
         try:
             # 5a. Fetch body
@@ -65,8 +68,8 @@ async def process_messages(
             else:
                 logger.info(f"Skipped message {message_id} (Not Recruiter).")
 
-            # Return success status
-            return msg_ts_iso, is_recruiter
+            # Return success status (True means processed without exception)
+            return msg_ts_iso, True
 
         except Exception:
             logger.exception(f"Failed to process message {message_id}")
@@ -99,65 +102,100 @@ async def main() -> None:
     logger.info(f"Using state file: {state_file}", extra={"phase": "phase-1"})
     state_manager = StateManager(state_file)
     state = await state_manager.load_state()
-    last_run_iso = state.get("last_run_timestamp", "1970-01-01T00:00:00Z")
+    last_run_iso = state.get("last_run_timestamp", "1970-01-01T00:00:00.000Z")
     logger.info(f"Last run: {last_run_iso}", extra={"phase": "phase-1"})
 
-    # Convert ISO to Unix timestamp for Gmail query
+    # Convert ISO to Unix timestamp (seconds) for Gmail query
+    # And keep ms for precise filtering
     try:
+        # datetime.fromisoformat handles the Z and ms
         dt = datetime.fromisoformat(last_run_iso.replace("Z", "+00:00"))
-        last_run_unix = int(dt.timestamp())
+        last_run_unix_sec = int(dt.timestamp())
+        last_run_ms = int(dt.timestamp() * 1000)
     except ValueError:
-        logger.warning(f"Invalid last_run_timestamp: {last_run_iso}, defaulting to 0")
-        last_run_unix = 0
+        logger.warning(
+            f"Invalid last_run_timestamp: {last_run_iso}, defaulting to 0"
+        )
+        last_run_unix_sec = 0
+        last_run_ms = 0
 
     # Initialize Clients
-    clients = await setup_clients()
-    if not clients:
+    clients_setup = await setup_clients()
+    if not clients_setup:
         return
-    gmail_client, _sheets_client, llm_client = clients
+    gmail_client, _sheets_client, llm_client = clients_setup
 
-    # 2. Fetch messages from Gmail
-    logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
-    query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix}'
-    messages = await gmail_client.fetch_messages(query)
-    logger.info(
-        f"Found {len(messages)} matching messages.", extra={"phase": "phase-2"}
-    )
-
-    if not messages:
-        logger.info("No new messages to process.", extra={"phase": "setup"})
-        return
-
-    # 3. Fetch metadata for sorting with parallel limit
-    logger.info("Fetching metadata for sorting...", extra={"phase": "phase-3"})
     try:
-        metadata_tasks = [
-            gmail_client.fetch_message_metadata(m["id"]) for m in messages
-        ]
-        messages_with_metadata = await asyncio.gather(*metadata_tasks)
-
-        # Sort oldest to newest
-        messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
-    except Exception:
-        logger.exception(
-            "Failed to fetch or sort message metadata",
-            extra={"phase": "phase-3"},
+        # 2. Fetch messages from Gmail
+        logger.info(
+            "Fetching new messages from Gmail...", extra={"phase": "phase-2"}
         )
-        return
+        # Query uses seconds resolution
+        query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix_sec}'
+        messages = await gmail_client.fetch_messages(query)
+        logger.info(
+            f"Found {len(messages)} matching messages.",
+            extra={"phase": "phase-2"},
+        )
 
-    # 4. Get label ID
-    label_id = await gmail_client.get_or_create_label(settings.GMAIL_LABEL_NAME)
+        if not messages:
+            logger.info("No new messages to process.", extra={"phase": "setup"})
+            return
 
-    # 5. Process messages
-    logger.info("Processing messages...", extra={"phase": "phase-4"})
-    results = await process_messages(
-        messages_with_metadata, gmail_client, llm_client, label_id
-    )
+        # 3. Fetch metadata for sorting and precise filtering
+        logger.info(
+            "Fetching metadata for sorting...", extra={"phase": "phase-3"}
+        )
+        try:
+            metadata_tasks = [
+                gmail_client.fetch_message_metadata(m["id"]) for m in messages
+            ]
+            messages_with_metadata = await asyncio.gather(*metadata_tasks)
 
-    # 6. Update local state / watermark
-    logger.info("Updating local state...", extra={"phase": "phase-6"})
-    new_watermark = await state_manager.update_watermark(results)
-    logger.info(f"New watermark: {new_watermark}", extra={"phase": "phase-6"})
+            # Filter messages precisely by ms to avoid same-second re-processing
+            messages_with_metadata = [
+                m
+                for m in messages_with_metadata
+                if int(m["internalDate"]) > last_run_ms
+            ]
+
+            # Sort oldest to newest
+            messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
+        except Exception:
+            logger.exception(
+                "Failed to fetch or sort message metadata",
+                extra={"phase": "phase-3"},
+            )
+            return
+
+        if not messages_with_metadata:
+            logger.info(
+                "No messages left after precise filtering.",
+                extra={"phase": "setup"},
+            )
+            return
+
+        # 4. Get label ID
+        label_id = await gmail_client.get_or_create_label(
+            settings.GMAIL_LABEL_NAME
+        )
+
+        # 5. Process messages
+        logger.info("Processing messages...", extra={"phase": "phase-4"})
+        results = await process_messages(
+            messages_with_metadata, gmail_client, llm_client, label_id
+        )
+
+        # 6. Update local state / watermark
+        logger.info("Updating local state...", extra={"phase": "phase-6"})
+        new_watermark = await state_manager.update_watermark(results)
+        logger.info(
+            f"New watermark: {new_watermark}", extra={"phase": "phase-6"}
+        )
+
+    finally:
+        # Ensure LLM client is closed
+        await llm_client.close()
 
     logger.info("Pipeline complete.", extra={"phase": "setup"})
 
