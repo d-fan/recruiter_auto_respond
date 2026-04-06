@@ -154,8 +154,6 @@ async def test_retry_on_failure(
     ]
 
     # Directly patch the wait configuration of the decorated function's retry object.
-    # The @retry decorator is evaluated at import, so monkeypatching wait_exponential
-    # at the module level doesn't affect it.
     monkeypatch.setattr(llm_client._call_llm.retry, "wait", wait_none())
 
     result = await llm_client.classify_message("Hello")

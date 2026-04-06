@@ -41,7 +41,6 @@ class LLMClient:
         user: str | None = None,
         password: str | None = None,
     ) -> None:
-
         """Initialize the LLM client.
 
         Args:
@@ -106,10 +105,6 @@ class LLMClient:
 
         Returns:
             True if the message is from a recruiter, False otherwise.
-
-        Raises:
-            httpx.HTTPStatusError: If the server returns an error response.
-            httpx.RequestError: If there's a network-level error.
         """
         # Simple character-based truncation to stay within context limits
         truncated_body = body[: self.max_context]
@@ -135,7 +130,8 @@ class LLMClient:
         try:
             content = data["choices"][0]["message"]["content"]
             result = json.loads(content)
-            is_recruiter = result.get("isRecruiter")
+            # Handle both possible keys from different prompts
+            is_recruiter = result.get("isRecruiter") or result.get("is_recruiter")
 
             if not isinstance(is_recruiter, bool):
                 logging.error(
