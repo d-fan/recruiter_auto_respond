@@ -5,6 +5,8 @@ from typing import Any, cast
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from .config import settings
+
 
 class GmailClient:
     """Client for fetching and labeling Gmail messages using Google API Client Library.
@@ -14,6 +16,7 @@ class GmailClient:
 
     def __init__(self, service: Any) -> None:
         self.service = service
+        self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -42,7 +45,34 @@ class GmailClient:
 
             return messages
 
-        return await asyncio.to_thread(_fetch_all)
+        async with self.semaphore:
+            return await asyncio.to_thread(_fetch_all)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
+    async def fetch_message_metadata(self, message_id: str) -> dict[str, Any]:
+        """Fetch metadata for a specific message (e.g., internalDate)."""
+        logging.debug(f"Fetching metadata for message: {message_id}")
+
+        def _fetch() -> dict[str, Any]:
+            return cast(
+                dict[str, Any],
+                self.service.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=message_id,
+                    format="minimal",
+                    fields="id,threadId,internalDate",
+                )
+                .execute(),
+            )
+
+        async with self.semaphore:
+            return await asyncio.to_thread(_fetch)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -99,7 +129,8 @@ class GmailClient:
                 logging.warning(f"Failed to decode body for message {message_id}: {e}")
                 return ""
 
-        return await asyncio.to_thread(_fetch)
+        async with self.semaphore:
+            return await asyncio.to_thread(_fetch)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -115,7 +146,8 @@ class GmailClient:
                 userId="me", id=message_id, body={"addLabelIds": [label_id]}
             ).execute()
 
-        await asyncio.to_thread(_add)
+        async with self.semaphore:
+            await asyncio.to_thread(_add)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -147,4 +179,5 @@ class GmailClient:
             )
             return cast(str, new_label["id"])
 
-        return await asyncio.to_thread(_get_create)
+        async with self.semaphore:
+            return await asyncio.to_thread(_get_create)
