@@ -104,14 +104,18 @@ async def run_pipeline(
     watermark_input = []
     for m, (row, success) in zip(messages, results, strict=True):
         if not success and not stop_event.is_set():
-            # This should not happen since classify_and_record sets stop_event on error
-            pass
+            logger.warning(
+                "classify_and_record returned success=False without setting "
+                "stop_event; this indicates an unexpected pipeline state for "
+                "message %s",
+                m.get("id", "<unknown>"),
+            )
 
         msg_ts_iso = ms_to_iso(int(m["internalDate"]))
 
         if stop_event.is_set() and not success and not row:
-             # Stop adding to watermark if we hit a hard stop
-             break
+            # Stop adding to watermark if we hit a hard stop
+            break
 
         if row:
             rows_to_sync.append(row)
@@ -119,7 +123,6 @@ async def run_pipeline(
 
         if not success:
             break
-
     # Late-Sync Drift Protection
     if rows_to_sync and not dry_run:
         logger.info("Performing late-sync drift check...")
@@ -167,8 +170,16 @@ async def main() -> None:
     gmail_client, sheets_client, llm_client = raw_clients
 
     try:
-        last_run_unix = iso_to_unix(last_run_iso)
-        last_run_ms = iso_to_ms(last_run_iso)
+        try:
+            last_run_unix = iso_to_unix(last_run_iso)
+            last_run_ms = iso_to_ms(last_run_iso)
+        except ValueError:
+            logger.warning(
+                "Invalid last_run_timestamp %r in state; defaulting to epoch.",
+                last_run_iso,
+            )
+            last_run_unix = 0
+            last_run_ms = 0
 
         query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix}'
         messages = await gmail_client.fetch_messages(query)

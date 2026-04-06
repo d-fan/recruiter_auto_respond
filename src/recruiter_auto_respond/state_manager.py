@@ -35,7 +35,7 @@ class StateManager:
                     with open(self.state_file, encoding="utf-8") as f:
                         data = json.load(f)
                     return AppState.model_validate(data)
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     logging.exception(f"Failed to load or validate {self.state_file}")
                     # In case of corruption, return a default state
                     return AppState()

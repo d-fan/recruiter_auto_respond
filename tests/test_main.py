@@ -77,9 +77,12 @@ async def test_main_pipeline_success():
 
         # Verify calls
         mock_gmail.fetch_messages.assert_called_once()
+        mock_sheets.get_message_ids.assert_called_once()
         mock_llm.classify_message.assert_called_once()
+        mock_gmail.add_label.assert_called_once()
         mock_sheets.append_rows.assert_called_once()
         mock_state_manager.update_watermark.assert_called_once()
+        mock_llm.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -151,3 +154,4 @@ async def test_main_pipeline_dry_run():
         mock_gmail.add_label.assert_not_called()
         mock_sheets.append_rows.assert_not_called()
         mock_state_manager.update_watermark.assert_called_once()
+        mock_llm.close.assert_awaited_once()

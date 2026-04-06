@@ -95,9 +95,27 @@ class LLMClient:
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
                 result = json.loads(content)
-                # Handle both possible keys from different prompts
-                is_recruiter = result.get("isRecruiter") or result.get("is_recruiter")
-                return bool(is_recruiter)
+
+                if not isinstance(result, dict):
+                    logging.error(
+                        "LLM classification returned non-object JSON: %r", result
+                    )
+                    return False
+
+                # Handle both possible keys from different prompts while preserving
+                # a valid False value from the primary key.
+                if "isRecruiter" in result:
+                    is_recruiter = result["isRecruiter"]
+                else:
+                    is_recruiter = result.get("is_recruiter")
+
+                if isinstance(is_recruiter, bool):
+                    return is_recruiter
+
+                logging.error(
+                    "LLM classification returned non-boolean value: %r", is_recruiter
+                )
+                return False
 
         try:
             return await self._retry_config(_call)
