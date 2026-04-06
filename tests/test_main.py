@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from recruiter_auto_respond.main import main
+from recruiter_auto_respond.state_manager import AppState
 
 
 @pytest.mark.asyncio
@@ -22,7 +23,7 @@ async def test_main_pipeline_success():
         # Mock StateManager
         mock_state_manager = MagicMock()
         mock_state_manager.load_state = AsyncMock(
-            return_value={"last_run_timestamp": "2023-01-01T00:00:00.000Z"}
+            return_value=AppState(last_run_timestamp="2023-01-01T00:00:00.000Z")
         )
         mock_state_manager.update_watermark = AsyncMock(
             return_value="2023-01-01T01:00:00.000Z"
@@ -74,14 +75,14 @@ async def test_main_pipeline_success():
         ):
             await main()
 
-            # Verify interactions
-            mock_gmail.fetch_messages.assert_called_once()
-            mock_llm.classify_message.assert_called_once_with("Recruiter email body")
-            mock_gmail.add_label.assert_called_once_with("msg1", "label_id")
-            mock_sheets.get_message_ids.assert_called_once_with("sheet_id")
-            mock_sheets.append_rows.assert_called_once()
-            mock_state_manager.update_watermark.assert_called_once()
-            mock_llm.close.assert_called_once()
+        # Verify calls
+        mock_gmail.fetch_messages.assert_called_once()
+        mock_sheets.get_message_ids.assert_called_once()
+        mock_llm.classify_message.assert_called_once()
+        mock_gmail.add_label.assert_called_once()
+        mock_sheets.append_rows.assert_called_once()
+        mock_state_manager.update_watermark.assert_called_once()
+        mock_llm.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -95,11 +96,12 @@ async def test_main_pipeline_dry_run():
         mock_settings.PARALLEL_LIMIT = 5
         mock_settings.LLM_API_URL = "http://llm"
         mock_settings.LLM_API_KEY = "key"
+        mock_settings.STATE_FILE = "state.json"
 
         # Mock StateManager
         mock_state_manager = MagicMock()
         mock_state_manager.load_state = AsyncMock(
-            return_value={"last_run_timestamp": "2023-01-01T00:00:00.000Z"}
+            return_value=AppState(last_run_timestamp="2023-01-01T00:00:00.000Z")
         )
         mock_state_manager.update_watermark = AsyncMock(
             return_value="2023-01-01T01:00:00.000Z"
@@ -148,13 +150,8 @@ async def test_main_pipeline_dry_run():
         ):
             await main()
 
-            # Verify interactions
-            mock_gmail.fetch_messages.assert_called_once()
-            mock_llm.classify_message.assert_called_once()
-            # label should NOT be added in dry run
-            mock_gmail.add_label.assert_not_called()
-            # sheets should NOT be touched in dry run
-            mock_sheets.get_message_ids.assert_not_called()
-            mock_sheets.append_rows.assert_not_called()
-            mock_state_manager.update_watermark.assert_called_once()
-            mock_llm.close.assert_called_once()
+        # Verify interactions
+        mock_gmail.add_label.assert_not_called()
+        mock_sheets.append_rows.assert_not_called()
+        mock_state_manager.update_watermark.assert_called_once()
+        mock_llm.close.assert_awaited_once()

@@ -5,33 +5,18 @@ import logging
 
 import httpx
 from tenacity import (
-    retry,
+    AsyncRetrying,
     retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
 
 from .config import settings
-
-
-def _is_transient_error(exception: BaseException) -> bool:
-    """Predicate for tenacity to retry only on transient failures.
-
-    Retries on network-level errors and HTTP 5xx or 429 status codes.
-    """
-    if isinstance(exception, httpx.HTTPStatusError):
-        # Retry on 5xx or 429 (Rate Limit)
-        status_500 = 500
-        status_429 = 429
-        return (
-            exception.response.status_code >= status_500
-            or exception.response.status_code == status_429
-        )
-    return isinstance(exception, httpx.RequestError)
+from .error_handling import is_transient_error
 
 
 class LLMClient:
-    """Client for classification using a local LLM (e.g., llama.cpp)."""
+    """Client for classification using a local LLM."""
 
     def __init__(self, api_url: str, api_key: str = "sk-no-key-required") -> None:
         """Initialize the LLM client.
@@ -46,6 +31,12 @@ class LLMClient:
         self.api_key = api_key
         self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
         self.client = httpx.AsyncClient(timeout=60.0)
+        self._retry_config = AsyncRetrying(
+            retry=retry_if_exception(is_transient_error),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            reraise=True,
+        )
         self.system_prompt = (
             "You are an expert recruitment assistant. Analyze the "
             "email content provided.\n"
@@ -56,7 +47,7 @@ class LLMClient:
             "or rejection emails.\n"
             "INCLUDE: Personalized outreach, requests for your resume, or "
             "invitations to interview.\n\n"
-            'Respond ONLY with a JSON object: {"is_recruiter": true/false}'
+            'Respond ONLY with a JSON object: {"isRecruiter": true/false}'
         )
 
     async def close(self) -> None:
@@ -69,92 +60,65 @@ class LLMClient:
         Returns:
             A dictionary containing the Authorization header.
         """
-        # Prioritize Basic Auth if provided, else Bearer Token
-        if getattr(settings, "LLM_USER", None) and getattr(settings, "LLM_PASS", None):
-            auth_str = f"{settings.LLM_USER}:{settings.LLM_PASS}"
-            encoded_auth = base64.b64encode(auth_str.encode()).decode()
-            return {"Authorization": f"Basic {encoded_auth}"}
+        if settings.LLM_USER and settings.LLM_PASS:
+            raw_auth = f"{settings.LLM_USER}:{settings.LLM_PASS}"
+            auth = base64.b64encode(raw_auth.encode()).decode()
+            return {"Authorization": f"Basic {auth}"}
 
         # Use provided api_key or fall back to settings
-        # In tests, sk-no-key-required is the default value passed to __init__
         token = self.api_key
         if not token or token == "sk-no-key-required":
-            token = getattr(settings, "LLM_API_KEY", "sk-no-key-required")
+            token = settings.LLM_API_KEY
 
         return {"Authorization": f"Bearer {token}"}
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception(_is_transient_error),
-        reraise=True,
-    )
-    async def _call_llm(self, body: str) -> bool:
-        """Internal method to call the LLM API with retries.
+    async def classify_message(self, body: str) -> bool:
+        """Classify message as recruiter or not."""
 
-        Args:
-            body: The email body content to classify.
+        async def _call() -> bool:
+            async with self.semaphore:
+                truncated_body = body[: settings.LLM_MAX_CONTEXT]
+                response = await self.client.post(
+                    self.api_url.join("chat/completions"),
+                    headers=self._get_headers(),
+                    json={
+                        "model": settings.LLM_MODEL_NAME,
+                        "messages": [
+                            {"role": "system", "content": self.system_prompt},
+                            {"role": "user", "content": truncated_body},
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.1,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                result = json.loads(content)
 
-        Returns:
-            True if the message is from a recruiter, False otherwise.
-        """
-        # Simple character-based truncation to stay within context limits
-        max_context = getattr(settings, "LLM_MAX_CONTEXT", 70000)
-        truncated_body = body[:max_context]
-        url = self.api_url.join("chat/completions")
+                if not isinstance(result, dict):
+                    logging.error(
+                        "LLM classification returned non-object JSON: %r", result
+                    )
+                    return False
 
-        logging.info("Posting to %s", url)
-        response = await self.client.post(
-            url,
-            headers=self._get_headers(),
-            json={
-                "model": getattr(settings, "LLM_MODEL_NAME", "gpt-3.5-turbo"),
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": truncated_body},
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.1,
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
+                # Handle both possible keys from different prompts while preserving
+                # a valid False value from the primary key.
+                if "isRecruiter" in result:
+                    is_recruiter = result["isRecruiter"]
+                else:
+                    is_recruiter = result.get("is_recruiter")
 
-        try:
-            content = data["choices"][0]["message"]["content"]
-            result = json.loads(content)
-            # Handle both possible keys from different prompts
-            is_recruiter = result.get("is_recruiter") or result.get("isRecruiter")
+                if isinstance(is_recruiter, bool):
+                    return is_recruiter
 
-            if not isinstance(is_recruiter, bool):
                 logging.error(
-                    "LLM response 'is_recruiter' field is not a boolean: %s",
-                    is_recruiter,
+                    "LLM classification returned non-boolean value: %r", is_recruiter
                 )
                 return False
 
-            return is_recruiter
-        except (KeyError, IndexError, json.JSONDecodeError) as e:
-            logging.error("Failed to parse LLM response: %s", e)
+        try:
+            return await self._retry_config(_call)
+        except Exception as e:
+            logging.error(f"LLM classification failed: {e}")
             return False
-
-    async def classify_message(self, body: str) -> bool:
-        """Determine if a message is from a recruiter.
-
-        This method uses a semaphore to limit parallel requests and
-        handles retries internally via `_call_llm`.
-
-        Args:
-            body: The email body content to classify.
-
-        Returns:
-            True if the message is identified as being from a recruiter,
-            False otherwise. Returns False if all retries fail.
-        """
-        logging.info("Classifying message with LLM...")
-        async with self.semaphore:
-            try:
-                return await self._call_llm(body)
-            except Exception as e:
-                logging.error("LLM classification failed after retries: %s", e)
-                return False
