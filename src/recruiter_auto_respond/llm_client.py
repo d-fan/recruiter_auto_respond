@@ -33,15 +33,17 @@ def _is_transient_error(exception: BaseException) -> bool:
 class LLMClient:
     """Client for classification using a local LLM (e.g., llama.cpp)."""
 
-    def __init__(self, api_url: str) -> None:
+    def __init__(self, api_url: str, api_key: str = "sk-no-key-required") -> None:
         """Initialize the LLM client.
 
         Args:
             api_url: The base URL of the LLM API (e.g., http://localhost:8080/v1).
+            api_key: Optional API key for authentication.
         """
         if not api_url.endswith("/"):
             api_url += "/"
         self.api_url = httpx.URL(api_url)
+        self.api_key = api_key
         self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
         self.client = httpx.AsyncClient(timeout=60.0)
         self.system_prompt = (
@@ -54,7 +56,7 @@ class LLMClient:
             "or rejection emails.\n"
             "INCLUDE: Personalized outreach, requests for your resume, or "
             "invitations to interview.\n\n"
-            'Respond ONLY with a JSON object: {"isRecruiter": true/false}'
+            'Respond ONLY with a JSON object: {"is_recruiter": true/false}'
         )
 
     async def close(self) -> None:
@@ -67,11 +69,19 @@ class LLMClient:
         Returns:
             A dictionary containing the Authorization header.
         """
-        if settings.LLM_USER and settings.LLM_PASS:
+        # Prioritize Basic Auth if provided, else Bearer Token
+        if getattr(settings, "LLM_USER", None) and getattr(settings, "LLM_PASS", None):
             auth_str = f"{settings.LLM_USER}:{settings.LLM_PASS}"
             encoded_auth = base64.b64encode(auth_str.encode()).decode()
             return {"Authorization": f"Basic {encoded_auth}"}
-        return {"Authorization": f"Bearer {settings.LLM_API_KEY}"}
+
+        # Use provided api_key or fall back to settings
+        # In tests, sk-no-key-required is the default value passed to __init__
+        token = self.api_key
+        if not token or token == "sk-no-key-required":
+            token = getattr(settings, "LLM_API_KEY", "sk-no-key-required")
+
+        return {"Authorization": f"Bearer {token}"}
 
     @retry(
         stop=stop_after_attempt(3),
@@ -87,13 +97,10 @@ class LLMClient:
 
         Returns:
             True if the message is from a recruiter, False otherwise.
-
-        Raises:
-            httpx.HTTPStatusError: If the server returns an error response.
-            httpx.RequestError: If there's a network-level error.
         """
         # Simple character-based truncation to stay within context limits
-        truncated_body = body[: settings.LLM_MAX_CONTEXT]
+        max_context = getattr(settings, "LLM_MAX_CONTEXT", 70000)
+        truncated_body = body[:max_context]
         url = self.api_url.join("chat/completions")
 
         logging.info("Posting to %s", url)
@@ -101,7 +108,7 @@ class LLMClient:
             url,
             headers=self._get_headers(),
             json={
-                "model": settings.LLM_MODEL_NAME,
+                "model": getattr(settings, "LLM_MODEL_NAME", "gpt-3.5-turbo"),
                 "messages": [
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": truncated_body},
@@ -116,11 +123,12 @@ class LLMClient:
         try:
             content = data["choices"][0]["message"]["content"]
             result = json.loads(content)
-            is_recruiter = result.get("isRecruiter")
+            # Handle both possible keys from different prompts
+            is_recruiter = result.get("is_recruiter") or result.get("isRecruiter")
 
             if not isinstance(is_recruiter, bool):
                 logging.error(
-                    "LLM response 'isRecruiter' field is not a boolean: %s",
+                    "LLM response 'is_recruiter' field is not a boolean: %s",
                     is_recruiter,
                 )
                 return False

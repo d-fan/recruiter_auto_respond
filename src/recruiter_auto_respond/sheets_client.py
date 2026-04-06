@@ -46,6 +46,36 @@ class SheetsClient:
         wait=wait_exponential(multiplier=1, min=4, max=10),
         reraise=True,
     )
+    async def append_rows(
+        self,
+        spreadsheet_id: str,
+        rows_data: Sequence[Sequence[str | int | float]],
+    ) -> None:
+        """Append multiple rows to the 'Emails' sheet."""
+        if not rows_data:
+            return
+
+        logging.info(
+            f"Appending {len(rows_data)} rows to spreadsheet {spreadsheet_id}"
+        )
+
+        def _append() -> None:
+            body = {"values": [list(row) for row in rows_data]}
+            self.service.spreadsheets().values().append(
+                spreadsheetId=spreadsheet_id,
+                range="Emails!A1",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body=body,
+            ).execute()
+
+        await asyncio.to_thread(_append)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
     async def append_row(
         self,
         spreadsheet_id: str,
