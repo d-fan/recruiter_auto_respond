@@ -114,25 +114,44 @@ async def run_pipeline(
 
     # 6. Late-Sync Drift Protection
     if rows_to_sync and not dry_run:
-        logger.info("Performing late-sync drift check...", extra={"phase": "phase-5"})
-        existing_ids = await clients.sheets.get_message_ids(settings.GOOGLE_SHEET_ID)
-        filtered_rows = [r for r in rows_to_sync if r["messageId"] not in existing_ids]
-
-        if filtered_rows:
-            logger.info(f"Syncing {len(filtered_rows)} rows to Sheets.")
-            sync_data = [
-                [r["threadId"], r["messageId"], r["timestamp"]] for r in filtered_rows
+        try:
+            logger.info(
+                "Performing late-sync drift check...", extra={"phase": "phase-5"}
+            )
+            existing_ids = await clients.sheets.get_message_ids(
+                settings.GOOGLE_SHEET_ID
+            )
+            filtered_rows = [
+                r for r in rows_to_sync if r["messageId"] not in existing_ids
             ]
-            await clients.sheets.append_rows(settings.GOOGLE_SHEET_ID, sync_data)
-        else:
-            logger.info("All messages already present in Sheets. Skipping sync.")
+
+            if filtered_rows:
+                logger.info(f"Syncing {len(filtered_rows)} rows to Sheets.")
+                sync_data = [
+                    [r["threadId"], r["messageId"], r["timestamp"]]
+                    for r in filtered_rows
+                ]
+                await clients.sheets.append_rows(settings.GOOGLE_SHEET_ID, sync_data)
+            else:
+                logger.info("All messages already present in Sheets. Skipping sync.")
+        except Exception:
+            logger.exception(
+                "Sheets sync failed; continuing to update local state.",
+                extra={"phase": "phase-5"},
+            )
     elif dry_run:
         logger.info("[DRY-RUN] Skipping Sheets sync.")
 
     # 7. Update local state / watermark
-    logger.info("Updating local state...", extra={"phase": "phase-6"})
-    new_watermark = await state_manager.update_watermark(watermark_input)
-    logger.info(f"New watermark: {new_watermark}", extra={"phase": "phase-6"})
+    if not dry_run:
+        logger.info("Updating local state...", extra={"phase": "phase-6"})
+        new_watermark = await state_manager.update_watermark(watermark_input)
+        logger.info(f"New watermark: {new_watermark}", extra={"phase": "phase-6"})
+    else:
+        logger.info(
+            "[DRY-RUN] Skipping local state/watermark update.",
+            extra={"phase": "phase-6"},
+        )
 
 
 async def main() -> None:

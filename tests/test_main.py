@@ -156,5 +156,5 @@ async def test_main_pipeline_dry_run():
             # sheets should NOT be touched in dry run
             mock_sheets.get_message_ids.assert_not_called()
             mock_sheets.append_rows.assert_not_called()
-            mock_state_manager.update_watermark.assert_called_once()
+            mock_state_manager.update_watermark.assert_not_called()
             mock_llm.close.assert_called_once()
