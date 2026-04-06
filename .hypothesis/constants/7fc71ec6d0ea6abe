@@ -1,4 +1,0 @@
-# file: /home/david/Projects/recruiter_auto_respond/agent-3/src/recruiter_auto_respond/main.py
-# hypothesis_version: 6.151.11
-
-[1000, '%Y-%m-%dT%H:%M:%S.%f', '+00:00', 'STATE_FILE', 'Z', '__main__', 'id', 'internalDate', 'last_run_timestamp', 'phase', 'phase-1', 'phase-2', 'phase-3', 'phase-4', 'phase-6', 'setup', 'state.json']
