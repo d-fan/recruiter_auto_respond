@@ -33,6 +33,7 @@ async def setup_clients() -> tuple[GmailClient, SheetsClient, LLMClient] | None:
 @dataclass
 class PipelineClients:
     """Container for pipeline clients."""
+
     gmail: GmailClient
     sheets: SheetsClient
     llm: LLMClient
@@ -42,7 +43,6 @@ class PipelineClients:
 async def classify_and_record(
     m: dict[str, Any],
     clients: PipelineClients,
-    semaphore: asyncio.Semaphore,
     dry_run: bool,
 ) -> tuple[dict[str, Any] | None, bool]:
     """Process a single message: fetch body, classify, and label if needed.
@@ -54,15 +54,13 @@ async def classify_and_record(
     thread_id = m["threadId"]
     internal_date = int(m["internalDate"])
     msg_dt = datetime.fromtimestamp(internal_date / 1000, tz=timezone.utc)
-    msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Use ISO format with millisecond precision to match watermark requirement
+    msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
     try:
-        async with semaphore:
-            # Fetch body
-            body = await clients.gmail.fetch_message_body(message_id)
-
-            # Classify
-            is_recruiter = await clients.llm.classify_message(body)
+        # Classify (LLMClient handles its own semaphore and retries)
+        body = await clients.gmail.fetch_message_body(message_id)
+        is_recruiter = await clients.llm.classify_message(body)
 
         if is_recruiter:
             if not dry_run:
@@ -98,11 +96,9 @@ async def run_pipeline(
 
     # 5. Process messages in parallel
     logger.info("Processing messages...", extra={"phase": "phase-4"})
-    semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
 
     process_tasks = [
-        classify_and_record(m, clients, semaphore, dry_run)
-        for m in messages_with_metadata
+        classify_and_record(m, clients, dry_run) for m in messages_with_metadata
     ]
 
     results = await asyncio.gather(*process_tasks)
@@ -111,8 +107,9 @@ async def run_pipeline(
     watermark_input = []
 
     for m, (_, success) in zip(messages_with_metadata, results, strict=True):
-        msg_dt = datetime.fromtimestamp(int(m["internalDate"]) / 1000, tz=timezone.utc)
-        msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        ms_timestamp = int(m["internalDate"])
+        msg_dt = datetime.fromtimestamp(ms_timestamp / 1000, tz=timezone.utc)
+        msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         watermark_input.append((msg_ts_iso, success))
 
     # 6. Late-Sync Drift Protection
@@ -151,14 +148,16 @@ async def main() -> None:
     state_file = getattr(settings, "STATE_FILE", "state.json")
     state_manager = StateManager(state_file)
     state = await state_manager.load_state()
-    last_run_iso = state.get("last_run_timestamp", "1970-01-01T00:00:00Z")
+    last_run_iso = state.get("last_run_timestamp", "1970-01-01T00:00:00.000Z")
     logger.info(f"Last run: {last_run_iso}", extra={"phase": "phase-1"})
 
     try:
         dt = datetime.fromisoformat(last_run_iso.replace("Z", "+00:00"))
-        last_run_unix = int(dt.timestamp())
+        last_run_unix_sec = int(dt.timestamp())
+        last_run_ms = int(dt.timestamp() * 1000)
     except ValueError:
-        last_run_unix = 0
+        last_run_unix_sec = 0
+        last_run_ms = 0
 
     # Initialize Clients
     raw_clients = await setup_clients()
@@ -166,34 +165,58 @@ async def main() -> None:
         return
     gmail_client, sheets_client, llm_client = raw_clients
 
-    # 2. Fetch messages from Gmail
-    logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
-    query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix}'
-    messages = await gmail_client.fetch_messages(query)
-    logger.info(f"Found {len(messages)} matching messages.", extra={"phase": "phase-2"})
+    try:
+        # 2. Fetch messages from Gmail
+        logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
+        query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix_sec}'
+        messages = await gmail_client.fetch_messages(query)
+        logger.info(
+            f"Found {len(messages)} matching messages.", extra={"phase": "phase-2"}
+        )
 
-    if not messages:
-        logger.info("No new messages to process.", extra={"phase": "setup"})
-        return
+        if not messages:
+            logger.info("No new messages to process.", extra={"phase": "setup"})
+            return
 
-    # 3. Fetch metadata for sorting
-    logger.info("Fetching metadata for sorting...", extra={"phase": "phase-3"})
-    metadata_tasks = [gmail_client.fetch_message_metadata(m["id"]) for m in messages]
-    messages_with_metadata = await asyncio.gather(*metadata_tasks)
-    messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
+        # 3. Fetch metadata for sorting and precise filtering
+        logger.info("Fetching metadata for sorting...", extra={"phase": "phase-3"})
+        metadata_tasks = [
+            gmail_client.fetch_message_metadata(m["id"]) for m in messages
+        ]
+        messages_with_metadata = await asyncio.gather(*metadata_tasks)
 
-    # 4. Get label ID
-    label_id = await gmail_client.get_or_create_label(settings.GMAIL_LABEL_NAME)
+        # Filter messages precisely by ms to avoid same-second re-processing
+        messages_with_metadata = [
+            m for m in messages_with_metadata if int(m["internalDate"]) > last_run_ms
+        ]
 
-    # 5-7. Run Pipeline
-    clients = PipelineClients(
-        gmail=gmail_client,
-        sheets=sheets_client,
-        llm=llm_client,
-        label_id=label_id,
-    )
-    await run_pipeline(clients, messages_with_metadata, state_manager, args.dry_run)
+        if not messages_with_metadata:
+            logger.info(
+                "No messages left after precise filtering.", extra={"phase": "setup"}
+            )
+            return
+
+        # Sort oldest to newest
+        messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
+
+        # 4. Get label ID
+        label_id = await gmail_client.get_or_create_label(settings.GMAIL_LABEL_NAME)
+
+        # 5-7. Run Pipeline
+        clients = PipelineClients(
+            gmail=gmail_client,
+            sheets=sheets_client,
+            llm=llm_client,
+            label_id=label_id,
+        )
+        await run_pipeline(clients, messages_with_metadata, state_manager, args.dry_run)
+
+    finally:
+        # Ensure LLM client is closed
+        await llm_client.close()
+
     logger.info("Pipeline complete.", extra={"phase": "setup"})
+
 
 if __name__ == "__main__":
     logging.basicConfig(

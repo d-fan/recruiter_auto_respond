@@ -22,16 +22,17 @@ async def test_main_pipeline_success():
         # Mock StateManager
         mock_state_manager = MagicMock()
         mock_state_manager.load_state = AsyncMock(
-            return_value={"last_run_timestamp": "2023-01-01T00:00:00Z"}
+            return_value={"last_run_timestamp": "2023-01-01T00:00:00.000Z"}
         )
         mock_state_manager.update_watermark = AsyncMock(
-            return_value="2023-01-01T01:00:00Z"
+            return_value="2023-01-01T01:00:00.000Z"
         )
 
         # Mock Clients
         mock_gmail = AsyncMock()
         mock_sheets = AsyncMock()
         mock_llm = AsyncMock()
+        mock_llm.close = AsyncMock()
 
         # 1. Mock Gmail: fetch_messages
         mock_gmail.fetch_messages.return_value = [{"id": "msg1", "threadId": "t1"}]
@@ -45,6 +46,7 @@ async def test_main_pipeline_success():
                     datetime(2023, 1, 1, 1, 0, 0, tzinfo=timezone.utc).timestamp()
                     * 1000
                 )
+                + 100  # Ensure it's after the watermark
             ),
         }
 
@@ -79,6 +81,7 @@ async def test_main_pipeline_success():
             mock_sheets.get_message_ids.assert_called_once_with("sheet_id")
             mock_sheets.append_rows.assert_called_once()
             mock_state_manager.update_watermark.assert_called_once()
+            mock_llm.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -96,16 +99,17 @@ async def test_main_pipeline_dry_run():
         # Mock StateManager
         mock_state_manager = MagicMock()
         mock_state_manager.load_state = AsyncMock(
-            return_value={"last_run_timestamp": "2023-01-01T00:00:00Z"}
+            return_value={"last_run_timestamp": "2023-01-01T00:00:00.000Z"}
         )
         mock_state_manager.update_watermark = AsyncMock(
-            return_value="2023-01-01T01:00:00Z"
+            return_value="2023-01-01T01:00:00.000Z"
         )
 
         # Mock Clients
         mock_gmail = AsyncMock()
         mock_sheets = AsyncMock()
         mock_llm = AsyncMock()
+        mock_llm.close = AsyncMock()
 
         # 1. Mock Gmail: fetch_messages
         mock_gmail.fetch_messages.return_value = [{"id": "msg1", "threadId": "t1"}]
@@ -119,6 +123,7 @@ async def test_main_pipeline_dry_run():
                     datetime(2023, 1, 1, 1, 0, 0, tzinfo=timezone.utc).timestamp()
                     * 1000
                 )
+                + 100
             ),
         }
 
@@ -152,3 +157,4 @@ async def test_main_pipeline_dry_run():
             mock_sheets.get_message_ids.assert_not_called()
             mock_sheets.append_rows.assert_not_called()
             mock_state_manager.update_watermark.assert_called_once()
+            mock_llm.close.assert_called_once()
