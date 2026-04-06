@@ -13,23 +13,6 @@ from recruiter_auto_respond.sheets_client import SheetsClient
 from recruiter_auto_respond.state_manager import StateManager
 
 
-async def setup_clients() -> tuple[GmailClient, SheetsClient, LLMClient] | None:
-    """Initialize all necessary clients."""
-    logger = logging.getLogger(__name__)
-    try:
-        gmail_service, sheets_service = await get_google_services_async(
-            settings.GOOGLE_APPLICATION_CREDENTIALS
-        )
-        gmail_client = GmailClient(gmail_service)
-        sheets_client = SheetsClient(sheets_service)
-        llm_client = LLMClient(settings.LLM_API_URL, settings.LLM_API_KEY)
-        logger.info("Clients initialized successfully.", extra={"phase": "setup"})
-        return gmail_client, sheets_client, llm_client
-    except Exception:
-        logger.exception("Failed to initialize clients", extra={"phase": "setup"})
-        return None
-
-
 @dataclass
 class PipelineClients:
     """Container for pipeline clients."""
@@ -179,12 +162,19 @@ async def main() -> None:
         last_run_ms = 0
 
     # Initialize Clients
-    raw_clients = await setup_clients()
-    if not raw_clients:
-        return
-    gmail_client, sheets_client, llm_client = raw_clients
-
+    llm_client = LLMClient(settings.LLM_API_URL, settings.LLM_API_KEY)
     try:
+        try:
+            gmail_service, sheets_service = await get_google_services_async(
+                settings.GOOGLE_APPLICATION_CREDENTIALS
+            )
+            gmail_client = GmailClient(gmail_service)
+            sheets_client = SheetsClient(sheets_service)
+            logger.info("Clients initialized successfully.", extra={"phase": "setup"})
+        except Exception:
+            logger.exception("Failed to initialize clients", extra={"phase": "setup"})
+            return
+
         # 2. Fetch messages from Gmail
         logger.info("Fetching new messages from Gmail...", extra={"phase": "phase-2"})
         query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix_sec}'

@@ -3,9 +3,23 @@ import base64
 import logging
 from typing import Any, cast
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from googleapiclient.errors import HttpError
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from .config import settings
+
+
+def _is_transient_error(exception: BaseException) -> bool:
+    """Predicate for tenacity to retry only on transient Google API failures."""
+    if isinstance(exception, HttpError):
+        # Retry on 429 (Rate Limit) or 5xx (Server Error)
+        return exception.resp.status in [429, 500, 502, 503, 504]
+    return False
 
 
 class GmailClient:
@@ -21,6 +35,7 @@ class GmailClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception(_is_transient_error),
         reraise=True,
     )
     async def fetch_messages(self, query: str) -> list[dict[str, Any]]:
@@ -51,6 +66,7 @@ class GmailClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception(_is_transient_error),
         reraise=True,
     )
     async def fetch_message_metadata(self, message_id: str) -> dict[str, Any]:
@@ -77,6 +93,7 @@ class GmailClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception(_is_transient_error),
         reraise=True,
     )
     async def fetch_message_body(self, message_id: str) -> str:
@@ -135,6 +152,7 @@ class GmailClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception(_is_transient_error),
         reraise=True,
     )
     async def add_label(self, message_id: str, label_id: str) -> None:
@@ -152,6 +170,7 @@ class GmailClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception(_is_transient_error),
         reraise=True,
     )
     async def get_or_create_label(self, label_name: str) -> str:

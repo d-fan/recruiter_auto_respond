@@ -32,25 +32,22 @@ async def test_get_message_ids(
 
 
 @pytest.mark.asyncio  # type: ignore[untyped-decorator]
-async def test_append_row(sheets_client: SheetsClient, mock_service: MagicMock) -> None:
+async def test_append_rows(
+    sheets_client: SheetsClient, mock_service: MagicMock
+) -> None:
     mock_append = mock_service.spreadsheets().values().append().execute
     mock_append.return_value = {}
 
-    row_data = [
-        "thread1",
-        "msg1",
-        "2026-03-10",
-        "recruiter@example.com",
-        "me@example.com",
-        "Job",
-        "Body",
+    rows_data = [
+        ["thread1", "msg1", "2026-03-10"],
+        ["thread2", "msg2", "2026-03-11"],
     ]
-    await sheets_client.append_row("sheet_id", row_data)
+    await sheets_client.append_rows("sheet_id", rows_data)
 
     mock_service.spreadsheets().values().append.assert_called_with(
         spreadsheetId="sheet_id",
         range="Emails!A1",
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
-        body={"values": [row_data]},
+        body={"values": rows_data},
     )

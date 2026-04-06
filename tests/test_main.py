@@ -18,6 +18,7 @@ async def test_main_pipeline_success():
         mock_settings.LLM_API_URL = "http://llm"
         mock_settings.LLM_API_KEY = "key"
         mock_settings.STATE_FILE = "state.json"
+        mock_settings.GOOGLE_APPLICATION_CREDENTIALS = "creds.json"
 
         # Mock StateManager
         mock_state_manager = MagicMock()
@@ -28,7 +29,7 @@ async def test_main_pipeline_success():
             return_value="2023-01-01T01:00:00.000Z"
         )
 
-        # Mock Clients
+        # Mock Clients and Auth
         mock_gmail = AsyncMock()
         mock_sheets = AsyncMock()
         mock_llm = AsyncMock()
@@ -66,8 +67,14 @@ async def test_main_pipeline_success():
         with patch(
             "recruiter_auto_respond.main.StateManager", return_value=mock_state_manager
         ), patch(
-            "recruiter_auto_respond.main.setup_clients",
-            return_value=(mock_gmail, mock_sheets, mock_llm),
+            "recruiter_auto_respond.main.LLMClient", return_value=mock_llm
+        ), patch(
+            "recruiter_auto_respond.main.get_google_services_async",
+            return_value=(MagicMock(), MagicMock()),
+        ), patch(
+            "recruiter_auto_respond.main.GmailClient", return_value=mock_gmail
+        ), patch(
+            "recruiter_auto_respond.main.SheetsClient", return_value=mock_sheets
         ), patch(
             "argparse.ArgumentParser.parse_args",
             return_value=MagicMock(dry_run=False),
@@ -95,6 +102,7 @@ async def test_main_pipeline_dry_run():
         mock_settings.PARALLEL_LIMIT = 5
         mock_settings.LLM_API_URL = "http://llm"
         mock_settings.LLM_API_KEY = "key"
+        mock_settings.GOOGLE_APPLICATION_CREDENTIALS = "creds.json"
 
         # Mock StateManager
         mock_state_manager = MagicMock()
@@ -140,8 +148,14 @@ async def test_main_pipeline_dry_run():
         with patch(
             "recruiter_auto_respond.main.StateManager", return_value=mock_state_manager
         ), patch(
-            "recruiter_auto_respond.main.setup_clients",
-            return_value=(mock_gmail, mock_sheets, mock_llm),
+            "recruiter_auto_respond.main.LLMClient", return_value=mock_llm
+        ), patch(
+            "recruiter_auto_respond.main.get_google_services_async",
+            return_value=(MagicMock(), MagicMock()),
+        ), patch(
+            "recruiter_auto_respond.main.GmailClient", return_value=mock_gmail
+        ), patch(
+            "recruiter_auto_respond.main.SheetsClient", return_value=mock_sheets
         ), patch(
             "argparse.ArgumentParser.parse_args",
             return_value=MagicMock(dry_run=True),
