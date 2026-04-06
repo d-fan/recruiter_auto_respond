@@ -1,0 +1,4 @@
+# file: /home/david/Projects/recruiter_auto_respond/agent-3/src/recruiter_auto_respond/llm_client.py
+# hypothesis_version: 6.151.11
+
+[0.1, 60.0, 429, 500, 4096, '/', 'Authorization', 'Posting to %s', 'chat/completions', 'choices', 'content', 'isRecruiter', 'json_object', 'message', 'messages', 'model', 'response_format', 'role', 'system', 'temperature', 'type', 'user']

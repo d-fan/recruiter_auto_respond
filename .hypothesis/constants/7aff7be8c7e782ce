@@ -1,0 +1,4 @@
+# file: /home/david/Projects/recruiter_auto_respond/agent-3/src/recruiter_auto_respond/sheets_client.py
+# hypothesis_version: 6.151.11
+
+['Emails!A1', 'Emails!B2:B', 'INSERT_ROWS', 'RAW', 'values']

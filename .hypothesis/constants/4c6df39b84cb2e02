@@ -1,0 +1,4 @@
+# file: /home/david/Projects/recruiter_auto_respond/agent-3/src/recruiter_auto_respond/config.py
+# hypothesis_version: 6.151.11
+
+[70000, '.env', 'credentials.json', 'gpt-oss-120b', 'ignore', 'recruiter', 'sk-no-key-required', 'state.json']

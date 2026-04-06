@@ -8,7 +8,6 @@ import respx
 from httpx import Response
 from tenacity.wait import wait_none
 
-from recruiter_auto_respond.config import settings
 from recruiter_auto_respond.llm_client import LLMClient
 
 
@@ -16,7 +15,8 @@ from recruiter_auto_respond.llm_client import LLMClient
 async def llm_client() -> AsyncGenerator[LLMClient, None]:
     # Use a fixed URL for tests to ensure respx matches consistently
     # regardless of environment settings.
-    client = LLMClient("http://localhost:8080/v1")
+    client = LLMClient("http://localhost:8080/v1", model_name="test-model")
+
     yield client
     await client.close()
 
@@ -59,37 +59,84 @@ async def test_classify_message_false(llm_client: LLMClient) -> None:
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_bearer_auth(
-    llm_client: LLMClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
-    monkeypatch.setattr(settings, "LLM_USER", None)
-
-    route = respx.post("http://localhost:8080/v1/chat/completions").mock(
-        return_value=Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+async def test_classify_message_malformed_json(llm_client: LLMClient) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(200, content="invalid json")
     )
 
-    await llm_client.classify_message("Hello")
-    assert "Authorization" in route.calls.last.request.headers
-    assert route.calls.last.request.headers["Authorization"] == "Bearer test-key"
+    result = await llm_client.classify_message("Hello")
+    assert result is False
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_basic_auth(
-    llm_client: LLMClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "LLM_USER", "user")
-    monkeypatch.setattr(settings, "LLM_PASS", "pass")
+async def test_classify_message_missing_field(llm_client: LLMClient) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+    )
+
+    result = await llm_client.classify_message("Hello")
+    assert result is False
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_classify_message_wrong_type(llm_client: LLMClient) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": json.dumps({"isRecruiter": "maybe"})}}
+                ]
+            },
+        )
+    )
+
+    result = await llm_client.classify_message("Hello")
+    assert result is False
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_bearer_auth() -> None:
+    client = LLMClient(
+        "http://localhost:8080/v1", model_name="test-model", api_key="test-key"
+    )
 
     route = respx.post("http://localhost:8080/v1/chat/completions").mock(
         return_value=Response(200, json={"choices": [{"message": {"content": "{}"}}]})
     )
 
-    await llm_client.classify_message("Hello")
-    assert "Authorization" in route.calls.last.request.headers
-    # Basic Auth for user:pass is dXNlcjpwYXNz
-    assert route.calls.last.request.headers["Authorization"] == "Basic dXNlcjpwYXNz"
+    try:
+        await client.classify_message("Hello")
+        assert "Authorization" in route.calls.last.request.headers
+        assert route.calls.last.request.headers["Authorization"] == "Bearer test-key"
+    finally:
+        await client.close()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_basic_auth() -> None:
+    client = LLMClient(
+        "http://localhost:8080/v1",
+        model_name="test-model",
+        user="user",
+        password="pass",
+    )
+
+    route = respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+    )
+
+    try:
+        await client.classify_message("Hello")
+        assert "Authorization" in route.calls.last.request.headers
+        # Basic Auth for user:pass is dXNlcjpwYXNz
+        assert route.calls.last.request.headers["Authorization"] == "Basic dXNlcjpwYXNz"
+    finally:
+        await client.close()
 
 
 @respx.mock
@@ -119,14 +166,11 @@ async def test_retry_on_failure(
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_parallel_limit(
-    llm_client: LLMClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_parallel_limit() -> None:
     test_limit = 2
-    monkeypatch.setattr(settings, "PARALLEL_LIMIT", test_limit)
-    # Re-initialize the semaphore in the client because it was
-    # created with the default limit
-    llm_client.semaphore = asyncio.Semaphore(test_limit)
+    client = LLMClient(
+        "http://localhost:8080/v1", model_name="test-model", parallel_limit=test_limit
+    )
 
     peak_requests = 0
     current_requests = 0
@@ -146,10 +190,13 @@ async def test_parallel_limit(
         side_effect=mock_handler
     )
 
-    tasks = [llm_client.classify_message(f"Msg {i}") for i in range(5)]
-    results = await asyncio.gather(*tasks)
+    try:
+        tasks = [client.classify_message(f"Msg {i}") for i in range(5)]
+        results = await asyncio.gather(*tasks)
 
-    expected_results_count = 5
-    assert len(results) == expected_results_count
-    assert all(results)
-    assert peak_requests == test_limit
+        expected_results_count = 5
+        assert len(results) == expected_results_count
+        assert all(results)
+        assert peak_requests == test_limit
+    finally:
+        await client.close()

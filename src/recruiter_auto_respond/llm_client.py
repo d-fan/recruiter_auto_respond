@@ -11,8 +11,6 @@ from tenacity import (
     wait_exponential,
 )
 
-from .config import settings
-
 
 def _is_transient_error(exception: BaseException) -> bool:
     """Predicate for tenacity to retry only on transient failures.
@@ -33,16 +31,37 @@ def _is_transient_error(exception: BaseException) -> bool:
 class LLMClient:
     """Client for classification using a local LLM (e.g., llama.cpp)."""
 
-    def __init__(self, api_url: str) -> None:
+    def __init__(  # noqa: PLR0913
+        self,
+        api_url: str,
+        model_name: str,
+        parallel_limit: int = 1,
+        max_context: int = 4096,
+        api_key: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+    ) -> None:
+
         """Initialize the LLM client.
 
         Args:
             api_url: The base URL of the LLM API (e.g., http://localhost:8080/v1).
+            model_name: The name of the model to use.
+            parallel_limit: Maximum number of parallel requests.
+            max_context: Maximum characters for truncation.
+            api_key: API Key for authentication.
+            user: Basic Auth username.
+            password: Basic Auth password.
         """
         if not api_url.endswith("/"):
             api_url += "/"
         self.api_url = httpx.URL(api_url)
-        self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+        self.model_name = model_name
+        self.max_context = max_context
+        self.api_key = api_key
+        self.user = user
+        self.password = password
+        self.semaphore = asyncio.Semaphore(parallel_limit)
         self.client = httpx.AsyncClient(timeout=60.0)
         self.system_prompt = (
             "You are an expert recruitment assistant. Analyze the "
@@ -62,16 +81,16 @@ class LLMClient:
         await self.client.aclose()
 
     def _get_headers(self) -> dict[str, str]:
-        """Generate authentication headers based on settings.
+        """Generate authentication headers based on credentials.
 
         Returns:
             A dictionary containing the Authorization header.
         """
-        if settings.LLM_USER and settings.LLM_PASS:
-            auth_str = f"{settings.LLM_USER}:{settings.LLM_PASS}"
+        if self.user and self.password:
+            auth_str = f"{self.user}:{self.password}"
             encoded_auth = base64.b64encode(auth_str.encode()).decode()
             return {"Authorization": f"Basic {encoded_auth}"}
-        return {"Authorization": f"Bearer {settings.LLM_API_KEY}"}
+        return {"Authorization": f"Bearer {self.api_key}"}
 
     @retry(
         stop=stop_after_attempt(3),
@@ -93,7 +112,7 @@ class LLMClient:
             httpx.RequestError: If there's a network-level error.
         """
         # Simple character-based truncation to stay within context limits
-        truncated_body = body[: settings.LLM_MAX_CONTEXT]
+        truncated_body = body[: self.max_context]
         url = self.api_url.join("chat/completions")
 
         logging.info("Posting to %s", url)
@@ -101,7 +120,7 @@ class LLMClient:
             url,
             headers=self._get_headers(),
             json={
-                "model": settings.LLM_MODEL_NAME,
+                "model": self.model_name,
                 "messages": [
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": truncated_body},

@@ -1,0 +1,4 @@
+# file: /home/david/Projects/recruiter_auto_respond/agent-3/src/recruiter_auto_respond/google_auth.py
+# hypothesis_version: 6.151.11
+
+['gmail', 'sheets', 'token.json', 'utf-8', 'v1', 'v4', 'w']

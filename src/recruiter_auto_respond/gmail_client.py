@@ -5,8 +5,6 @@ from typing import Any, cast
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from .config import settings
-
 
 class GmailClient:
     """Client for fetching and labeling Gmail messages using Google API Client Library.
@@ -14,9 +12,9 @@ class GmailClient:
     All methods use asyncio.to_thread to wrap blocking operations.
     """
 
-    def __init__(self, service: Any) -> None:
+    def __init__(self, service: Any, parallel_limit: int = 1) -> None:
         self.service = service
-        self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+        self.semaphore = asyncio.Semaphore(parallel_limit)
 
     @retry(
         stop=stop_after_attempt(3),

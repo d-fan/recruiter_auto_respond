@@ -5,14 +5,13 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-from recruiter_auto_respond.config import settings
-
 
 class StateManager:
     """Manager for local state persistence."""
 
-    def __init__(self, state_file: str) -> None:
+    def __init__(self, state_file: str, default_lookback_days: int = 7) -> None:
         self.state_file = state_file
+        self.default_lookback_days = default_lookback_days
 
     async def load_state(self) -> dict[str, Any]:
         """Load state from file."""
@@ -35,10 +34,9 @@ class StateManager:
 
                     return cast(dict[str, Any], data)
 
-            # Default to a 7-day lookback if state doesn't exist
-            lookback_days = getattr(settings, "DEFAULT_LOOKBACK_DAYS", 7)
+            # Default to a lookback if state doesn't exist
             default_timestamp = (
-                datetime.now(timezone.utc) - timedelta(days=lookback_days)
+                datetime.now(timezone.utc) - timedelta(days=self.default_lookback_days)
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
             return {"last_run_timestamp": default_timestamp}
 
@@ -79,9 +77,8 @@ class StateManager:
 
         if not isinstance(current_watermark, str):
             # Fallback to default if state is missing or corrupted
-            lookback_days = getattr(settings, "DEFAULT_LOOKBACK_DAYS", 7)
             current_watermark = (
-                datetime.now(timezone.utc) - timedelta(days=lookback_days)
+                datetime.now(timezone.utc) - timedelta(days=self.default_lookback_days)
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         new_watermark = current_watermark
