@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from recruiter_auto_respond.config import settings
@@ -9,200 +8,118 @@ from recruiter_auto_respond.google_auth import get_google_services_async
 from recruiter_auto_respond.llm_client import LLMClient
 from recruiter_auto_respond.sheets_client import SheetsClient
 from recruiter_auto_respond.state_manager import StateManager
+from recruiter_auto_respond.utils import iso_to_ms, iso_to_unix, ms_to_iso
 
 
 async def setup_clients() -> tuple[GmailClient, SheetsClient, LLMClient] | None:
     """Initialize all necessary clients."""
-    logger = logging.getLogger(__name__)
     try:
         gmail_service, sheets_service = await get_google_services_async(
             settings.GOOGLE_APPLICATION_CREDENTIALS
         )
-        gmail_client = GmailClient(gmail_service)
-        sheets_client = SheetsClient(sheets_service)
-        llm_client = LLMClient(settings.LLM_API_URL)
-        logger.info("Clients initialized successfully.", extra={"phase": "setup"})
-        return gmail_client, sheets_client, llm_client
+        return (
+            GmailClient(gmail_service),
+            SheetsClient(sheets_service),
+            LLMClient(settings.LLM_API_URL),
+        )
     except Exception:
-        logger.exception("Failed to initialize clients", extra={"phase": "setup"})
+        logging.exception("Failed to initialize clients")
         return None
 
 
 async def process_messages(
-    messages_with_metadata: list[dict[str, Any]],
+    messages: list[dict[str, Any]],
     gmail_client: GmailClient,
     llm_client: LLMClient,
     label_id: str,
 ) -> list[tuple[str, bool]]:
-    """Process messages in parallel and return results.
-
-    Respects the "Hard Stop" requirement by stopping new work if a failure occurs.
-    """
+    """Process messages in parallel, stopping on the first failure."""
     logger = logging.getLogger(__name__)
     stop_event = asyncio.Event()
 
-    async def process_single(m: dict[str, Any]) -> tuple[str, bool]:
+    async def _process_single(m: dict[str, Any]) -> tuple[str, bool]:
         if stop_event.is_set():
-            # If a hard stop was triggered, we don't process further.
             return "", False
 
         message_id = m["id"]
-        # Convert internalDate (ms) to ISO format with ms precision
-        # internalDate is ms since epoch
-        ms_timestamp = int(m["internalDate"])
-        msg_dt = datetime.fromtimestamp(ms_timestamp / 1000, tz=timezone.utc)
-        # Use ISO format with millisecond precision
-        msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        msg_ts_iso = ms_to_iso(int(m["internalDate"]))
 
         try:
-            # 5a. Fetch body
             body = await gmail_client.fetch_message_body(message_id)
-
-            # 5b. Classify
-            is_recruiter = await llm_client.classify_message(body)
-
-            # 5c. Label if match
-            if is_recruiter:
+            if await llm_client.classify_message(body):
                 await gmail_client.add_label(message_id, label_id)
                 logger.info(f"Labeled message {message_id} as Recruiter.")
             else:
                 logger.info(f"Skipped message {message_id} (Not Recruiter).")
-
-            # Return success status (True means processed without exception)
             return msg_ts_iso, True
-
         except Exception:
             logger.exception(f"Failed to process message {message_id}")
             stop_event.set()
             return "", False
 
-    # Create tasks for all messages. asyncio.gather will run them in parallel,
-    # and the semaphores in the clients will throttle the actual requests.
-    tasks = [process_single(m) for m in messages_with_metadata]
-    gathered_results = await asyncio.gather(*tasks)
+    gathered = await asyncio.gather(*[_process_single(m) for m in messages])
 
-    # Filter out results that weren't processed due to hard stop or failure
-    # but maintain the order for the watermark logic.
     results: list[tuple[str, bool]] = []
-    for ts, success in gathered_results:
-        if not ts:  # Indicates failure or hard stop
+    for ts, success in gathered:
+        if not ts:
             break
         results.append((ts, success))
-
     return results
 
 
 async def main() -> None:
-    """Main orchestrator for the AI Recruiter Labeler & Syncer."""
-    logger = logging.getLogger(__name__)
-    logger.info("Starting the pipeline...", extra={"phase": "setup"})
-
-    # 1. Load configuration and state
-    state_file = getattr(settings, "STATE_FILE", "state.json")
-    logger.info(f"Using state file: {state_file}", extra={"phase": "phase-1"})
-    state_manager = StateManager(state_file)
-    state = await state_manager.load_state()
-    last_run_iso = state.get("last_run_timestamp", "1970-01-01T00:00:00.000Z")
-    logger.info(f"Last run: {last_run_iso}", extra={"phase": "phase-1"})
-
-    # Convert ISO to Unix timestamp (seconds) for Gmail query
-    # And keep ms for precise filtering
-    try:
-        # datetime.fromisoformat handles the Z and ms
-        dt = datetime.fromisoformat(last_run_iso.replace("Z", "+00:00"))
-        last_run_unix_sec = int(dt.timestamp())
-        last_run_ms = int(dt.timestamp() * 1000)
-    except ValueError:
-        logger.warning(
-            f"Invalid last_run_timestamp: {last_run_iso}, defaulting to 0"
-        )
-        last_run_unix_sec = 0
-        last_run_ms = 0
-
-    # Initialize Clients
-    clients_setup = await setup_clients()
-    if not clients_setup:
-        return
-    gmail_client, _sheets_client, llm_client = clients_setup
-
-    try:
-        # 2. Fetch messages from Gmail
-        logger.info(
-            "Fetching new messages from Gmail...", extra={"phase": "phase-2"}
-        )
-        # Query uses seconds resolution
-        query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix_sec}'
-        messages = await gmail_client.fetch_messages(query)
-        logger.info(
-            f"Found {len(messages)} matching messages.",
-            extra={"phase": "phase-2"},
-        )
-
-        if not messages:
-            logger.info("No new messages to process.", extra={"phase": "setup"})
-            return
-
-        # 3. Fetch metadata for sorting and precise filtering
-        logger.info(
-            "Fetching metadata for sorting...", extra={"phase": "phase-3"}
-        )
-        try:
-            metadata_tasks = [
-                gmail_client.fetch_message_metadata(m["id"]) for m in messages
-            ]
-            messages_with_metadata = await asyncio.gather(*metadata_tasks)
-
-            # Filter messages precisely by ms to avoid same-second re-processing
-            messages_with_metadata = [
-                m
-                for m in messages_with_metadata
-                if int(m["internalDate"]) > last_run_ms
-            ]
-
-            # Sort oldest to newest
-            messages_with_metadata.sort(key=lambda m: int(m["internalDate"]))
-        except Exception:
-            logger.exception(
-                "Failed to fetch or sort message metadata",
-                extra={"phase": "phase-3"},
-            )
-            return
-
-        if not messages_with_metadata:
-            logger.info(
-                "No messages left after precise filtering.",
-                extra={"phase": "setup"},
-            )
-            return
-
-        # 4. Get label ID
-        label_id = await gmail_client.get_or_create_label(
-            settings.GMAIL_LABEL_NAME
-        )
-
-        # 5. Process messages
-        logger.info("Processing messages...", extra={"phase": "phase-4"})
-        results = await process_messages(
-            messages_with_metadata, gmail_client, llm_client, label_id
-        )
-
-        # 6. Update local state / watermark
-        logger.info("Updating local state...", extra={"phase": "phase-6"})
-        new_watermark = await state_manager.update_watermark(results)
-        logger.info(
-            f"New watermark: {new_watermark}", extra={"phase": "phase-6"}
-        )
-
-    finally:
-        # Ensure LLM client is closed
-        await llm_client.close()
-
-    logger.info("Pipeline complete.", extra={"phase": "setup"})
-
-
-if __name__ == "__main__":
+    """Main orchestrator for the AI Recruiter Labeler."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    logger = logging.getLogger(__name__)
+    logger.info("Starting pipeline...")
+
+    state_manager = StateManager(settings.STATE_FILE)
+    state = await state_manager.load_state()
+    last_run_iso = state.last_run_timestamp
+    logger.info(f"Last run: {last_run_iso}")
+
+    clients = await setup_clients()
+    if not clients:
+        return
+    gmail_client, _sheets_client, llm_client = clients
+
+    try:
+        last_run_unix = iso_to_unix(last_run_iso)
+        last_run_ms = iso_to_ms(last_run_iso)
+
+        query = f'-label:"{settings.GMAIL_LABEL_NAME}" after:{last_run_unix}'
+        messages = await gmail_client.fetch_messages(query)
+        if not messages:
+            logger.info("No new messages.")
+            return
+
+        metadata_tasks = [
+            gmail_client.fetch_message_metadata(m["id"]) for m in messages
+        ]
+        with_meta = await asyncio.gather(*metadata_tasks)
+
+        # Precise filtering and sorting
+        to_process = sorted(
+            [m for m in with_meta if int(m["internalDate"]) > last_run_ms],
+            key=lambda m: int(m["internalDate"]),
+        )
+
+        if not to_process:
+            logger.info("No new messages after filtering.")
+            return
+
+        label_id = await gmail_client.get_or_create_label(settings.GMAIL_LABEL_NAME)
+        results = await process_messages(to_process, gmail_client, llm_client, label_id)
+
+        new_watermark = await state_manager.update_watermark(results)
+        logger.info(f"New watermark: {new_watermark}")
+
+    finally:
+        await llm_client.close()
+
+
+if __name__ == "__main__":
     asyncio.run(main())
