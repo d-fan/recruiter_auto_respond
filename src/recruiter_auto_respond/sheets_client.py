@@ -28,7 +28,18 @@ class SheetsClient(BaseClient):
         row_data: Sequence[str | int | float],
     ) -> None:
         """Append a new row to the 'Emails' sheet."""
-        logging.info(f"Appending row to spreadsheet {spreadsheet_id}")
+        await self.append_rows(spreadsheet_id, [row_data])
+
+    async def append_rows(
+        self,
+        spreadsheet_id: str,
+        rows_data: Sequence[Sequence[str | int | float]],
+    ) -> None:
+        """Append multiple rows to the 'Emails' sheet."""
+        if not rows_data:
+            return
+
+        logging.info(f"Appending {len(rows_data)} rows to spreadsheet {spreadsheet_id}")
 
         def _append() -> None:
             self.service.spreadsheets().values().append(
@@ -36,7 +47,7 @@ class SheetsClient(BaseClient):
                 range="Emails!A1",
                 valueInputOption="RAW",
                 insertDataOption="INSERT_ROWS",
-                body={"values": [list(row_data)]},
+                body={"values": [list(row) for row in rows_data]},
             ).execute()
 
         await self._run_async(_append)

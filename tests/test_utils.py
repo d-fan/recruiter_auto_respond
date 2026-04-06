@@ -5,7 +5,8 @@ def test_iso_to_ms() -> None:
     iso = "2026-03-18T12:00:00.123Z"
     ms = iso_to_ms(iso)
     # 2026-03-18 12:00:00 is 1773835200 seconds
-    assert ms == 1773835200123
+    expected_ms = 1773835200123
+    assert ms == expected_ms
 
 
 def test_ms_to_iso() -> None:
@@ -23,4 +24,5 @@ def test_unix_to_iso() -> None:
 def test_iso_to_unix() -> None:
     iso = "2026-03-18T12:00:00Z"
     seconds = iso_to_unix(iso)
-    assert seconds == 1773835200
+    expected_seconds = 1773835200
+    assert seconds == expected_seconds

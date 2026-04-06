@@ -18,10 +18,17 @@ from .error_handling import is_transient_error
 class LLMClient:
     """Client for classification using a local LLM."""
 
-    def __init__(self, api_url: str) -> None:
+    def __init__(self, api_url: str, api_key: str = "sk-no-key-required") -> None:
+        """Initialize the LLM client.
+
+        Args:
+            api_url: The base URL of the LLM API (e.g., http://localhost:8080/v1).
+            api_key: Optional API key for authentication.
+        """
         if not api_url.endswith("/"):
             api_url += "/"
         self.api_url = httpx.URL(api_url)
+        self.api_key = api_key
         self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
         self.client = httpx.AsyncClient(timeout=60.0)
         self._retry_config = AsyncRetrying(
@@ -31,14 +38,16 @@ class LLMClient:
             reraise=True,
         )
         self.system_prompt = (
-            "You are an expert recruitment assistant. Analyze the email "
-            "content provided.\n"
-            "Determine if it is a message from a recruiter reaching out about "
-            "a specific job opportunity.\n"
-            'EXCLUDE: Automated alerts, newsletters, or rejections.\n'
-            'INCLUDE: Personalized outreach, requests for resume, or '
-            'interview invitations.\n'
-            'Respond ONLY with JSON: {"isRecruiter": true/false}'
+            "You are an expert recruitment assistant. Analyze the "
+            "email content provided.\n"
+            "Determine if it is a message from a recruiter, hiring manager, or "
+            "talent acquisition professional reaching out about a specific job "
+            "opportunity or scheduling an interview.\n\n"
+            'EXCLUDE: Automated job alerts, newsletters, LinkedIn "suggested jobs", '
+            "or rejection emails.\n"
+            "INCLUDE: Personalized outreach, requests for your resume, or "
+            "invitations to interview.\n\n"
+            'Respond ONLY with a JSON object: {"isRecruiter": true/false}'
         )
 
     async def close(self) -> None:
@@ -46,11 +55,22 @@ class LLMClient:
         await self.client.aclose()
 
     def _get_headers(self) -> dict[str, str]:
+        """Generate authentication headers based on settings.
+
+        Returns:
+            A dictionary containing the Authorization header.
+        """
         if settings.LLM_USER and settings.LLM_PASS:
             raw_auth = f"{settings.LLM_USER}:{settings.LLM_PASS}"
             auth = base64.b64encode(raw_auth.encode()).decode()
             return {"Authorization": f"Basic {auth}"}
-        return {"Authorization": f"Bearer {settings.LLM_API_KEY}"}
+
+        # Use provided api_key or fall back to settings
+        token = self.api_key
+        if not token or token == "sk-no-key-required":
+            token = settings.LLM_API_KEY
+
+        return {"Authorization": f"Bearer {token}"}
 
     async def classify_message(self, body: str) -> bool:
         """Classify message as recruiter or not."""
@@ -74,7 +94,10 @@ class LLMClient:
                 response.raise_for_status()
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
-                return bool(json.loads(content).get("isRecruiter"))
+                result = json.loads(content)
+                # Handle both possible keys from different prompts
+                is_recruiter = result.get("isRecruiter") or result.get("is_recruiter")
+                return bool(is_recruiter)
 
         try:
             return await self._retry_config(_call)
