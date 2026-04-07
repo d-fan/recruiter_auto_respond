@@ -1,0 +1,2 @@
+# Include HANDOFF.md even if it's in .gitignore
+!HANDOFF.md
