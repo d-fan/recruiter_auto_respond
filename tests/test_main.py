@@ -127,12 +127,10 @@ async def test_pipeline_hard_stop_on_failure(
     # msg1 was attempted
     mock_gmail_client.fetch_message_body.assert_called()
 
-    # Verify that even if msg2 was attempted (due to parallel execution
-    # before the event was set), the watermark only includes msg1 if it
-    # was successful.
-    # In our implementation of process_messages, we break at the first failure.
+    # Verify that the watermark only includes msg1 (failed) and stops.
     update_watermark_call = mock_state_manager.update_watermark.call_args[0][0]
-    assert len(update_watermark_call) == 0  # No successful messages before failure
+    assert len(update_watermark_call) == 1
+    assert update_watermark_call[0] == ("2024-01-01T00:00:01.000Z", False)
 
 
 @pytest.mark.asyncio

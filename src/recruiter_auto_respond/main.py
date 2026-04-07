@@ -99,21 +99,23 @@ class Pipeline:
         ]
         gathered_results = await asyncio.gather(*tasks)
 
-        # Corrected loop
+        # Post-process results
         rows_to_sync = []
         watermark_input: list[tuple[str, bool]] = []
+        
+        # We collect ALL rows that succeeded processing, regardless of failures elsewhere.
+        # This prevents "drift" where a message is labeled in Gmail but never synced to Sheets
+        # because a different concurrent message failed.
+        for row, ts, success in gathered_results:
+            if row:
+                rows_to_sync.append(row)
+
+        # The watermark, however, MUST stop at the first consecutive failure.
         for m, (row, ts, success) in zip(
             messages_with_metadata, gathered_results, strict=True
         ):
             current_ts = ts or ms_to_iso(int(m["internalDate"]))
-
-            if stop_event.is_set() and not success and not row:
-                break
-
-            if row:
-                rows_to_sync.append(row)
             watermark_input.append((current_ts, success))
-
             if not success:
                 break
 
