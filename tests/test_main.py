@@ -8,29 +8,32 @@ from recruiter_auto_respond.state_manager import AppState
 
 
 @pytest.fixture
-def mock_gmail_client():
+def mock_gmail_client() -> AsyncMock:
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_sheets_client():
+def mock_sheets_client() -> AsyncMock:
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_llm_client():
+def mock_llm_client() -> AsyncMock:
     return AsyncMock()
 
 
 @pytest.fixture
-def mock_state_manager():
+def mock_state_manager() -> AsyncMock:
     return AsyncMock()
 
 
 @pytest.fixture
 def pipeline(
-    mock_gmail_client, mock_sheets_client, mock_llm_client, mock_state_manager
-):
+    mock_gmail_client: AsyncMock,
+    mock_sheets_client: AsyncMock,
+    mock_llm_client: AsyncMock,
+    mock_state_manager: AsyncMock,
+) -> Pipeline:
     clients = PipelineClients(
         gmail=mock_gmail_client,
         sheets=mock_sheets_client,
@@ -46,8 +49,8 @@ def pipeline(
 
 @pytest.mark.asyncio
 async def test_pipeline_run_no_messages(
-    pipeline, mock_state_manager, mock_gmail_client
-):
+    pipeline: Pipeline, mock_state_manager: AsyncMock, mock_gmail_client: AsyncMock
+) -> None:
     # Mock state
     mock_state_manager.load_state.return_value = AppState(
         last_run_timestamp="2024-01-01T00:00:00.000Z"
@@ -63,8 +66,12 @@ async def test_pipeline_run_no_messages(
 
 @pytest.mark.asyncio
 async def test_pipeline_run_with_messages(
-    pipeline, mock_state_manager, mock_gmail_client, mock_llm_client, mock_sheets_client
-):
+    pipeline: Pipeline,
+    mock_state_manager: AsyncMock,
+    mock_gmail_client: AsyncMock,
+    mock_llm_client: AsyncMock,
+    mock_sheets_client: AsyncMock,
+) -> None:
     # Mock state
     mock_state_manager.load_state.return_value = AppState(
         last_run_timestamp="2024-01-01T00:00:00.000Z"
@@ -95,8 +102,11 @@ async def test_pipeline_run_with_messages(
 
 @pytest.mark.asyncio
 async def test_pipeline_hard_stop_on_failure(
-    pipeline, mock_state_manager, mock_gmail_client, mock_llm_client
-):
+    pipeline: Pipeline,
+    mock_state_manager: AsyncMock,
+    mock_gmail_client: AsyncMock,
+    mock_llm_client: AsyncMock,
+) -> None:
     # Mock state
     mock_state_manager.load_state.return_value = AppState(
         last_run_timestamp="2024-01-01T00:00:00.000Z"
@@ -134,7 +144,7 @@ async def test_pipeline_hard_stop_on_failure(
 
 
 @pytest.mark.asyncio
-async def test_main_pipeline_success():
+async def test_main_pipeline_success() -> None:
     """Test the full pipeline with mocked clients and successful processing."""
 
     # Mock settings

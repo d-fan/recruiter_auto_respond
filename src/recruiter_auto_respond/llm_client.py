@@ -75,13 +75,16 @@ class LLMClient:
         """Generate authentication headers based on credentials.
 
         Returns:
-            A dictionary containing the Authorization header.
+            A dictionary containing the Authorization header, or empty if no
+            credentials are provided.
         """
         if self.user and self.password:
             auth_str = f"{self.user}:{self.password}"
             encoded_auth = base64.b64encode(auth_str.encode()).decode()
             return {"Authorization": f"Basic {encoded_auth}"}
-        return {"Authorization": f"Bearer {self.api_key}"}
+        if self.api_key:
+            return {"Authorization": f"Bearer {self.api_key}"}
+        return {}
 
     async def classify_message(self, body: str) -> bool:
         """Classify message as recruiter or not."""

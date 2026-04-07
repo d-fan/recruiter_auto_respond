@@ -1,9 +1,10 @@
 import json
+from typing import Any, cast
 
 import pytest
 
 # Expected structure for /v1/chat/completions (OpenAI compatible)
-LLM_COMPLETION_RESPONSE = {
+LLM_COMPLETION_RESPONSE: dict[str, Any] = {
     "id": "chatcmpl-123",
     "object": "chat.completion",
     "created": 1677652288,
@@ -38,20 +39,21 @@ def test_llm_response_structure() -> None:
     assert isinstance(data["choices"], list)
     assert len(data["choices"]) > 0
 
-    choice = data["choices"][0]
+    choice = cast(dict[str, Any], data["choices"][0])
     assert "message" in choice
     assert choice["message"]["role"] == "assistant"
     assert "content" in choice["message"]
 
     # We expect JSON content in the message
-    content = choice["message"]["content"]
+    content = cast(str, choice["message"]["content"])
     parsed = json.loads(content)
     assert "isRecruiter" in parsed
     assert isinstance(parsed["isRecruiter"], bool)
 
     # Usage
     assert "usage" in data
-    assert isinstance(data["usage"]["total_tokens"], int)
+    usage = cast(dict[str, Any], data["usage"])
+    assert isinstance(usage["total_tokens"], int)
 
 
 if __name__ == "__main__":
