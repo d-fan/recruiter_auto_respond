@@ -135,7 +135,8 @@ async def run_pipeline(
         if filtered_rows:
             logger.info(f"Syncing {len(filtered_rows)} rows to Sheets.")
             sync_data = [
-                [r["threadId"], r["messageId"], r["timestamp"]] for r in filtered_rows
+                [r["threadId"], r["messageId"], r["timestamp"], r.get("draftReply", "")]
+                for r in filtered_rows
             ]
             await clients.sheets.append_rows(settings.GOOGLE_SHEET_ID, sync_data)
         else:

@@ -81,7 +81,18 @@ async def test_main_pipeline_success():
             mock_llm.generate_reply.assert_called_once_with("Recruiter email body")
             mock_gmail.add_label.assert_called_once_with("msg1", "label_id")
             mock_sheets.get_message_ids.assert_called_once_with("sheet_id")
+
+            # Verify the row data passed to append_rows
             mock_sheets.append_rows.assert_called_once()
+            call_args = mock_sheets.append_rows.call_args
+            assert call_args[0][0] == "sheet_id"
+            sync_data = call_args[0][1]
+            assert len(sync_data) == 1
+            row = sync_data[0]
+            assert row[0] == "t1"  # Thread ID
+            assert row[1] == "msg1"  # Message ID
+            assert row[3] == "Draft reply"  # Draft Reply
+
             mock_state_manager.update_watermark.assert_called_once()
             mock_llm.close.assert_called_once()
 
