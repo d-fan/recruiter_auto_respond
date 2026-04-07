@@ -109,12 +109,39 @@ async def test_retry_on_failure(
     # Directly patch the wait configuration of the decorated function's retry object.
     # The @retry decorator is evaluated at import, so monkeypatching wait_exponential
     # at the module level doesn't affect it.
-    monkeypatch.setattr(llm_client._call_llm.retry, "wait", wait_none())
+    monkeypatch.setattr(llm_client._request_llm.retry, "wait", wait_none())
 
     result = await llm_client.classify_message("Hello")
     assert result is True
     expected_call_count = 3
     assert route.call_count == expected_call_count
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_reply_success(llm_client: LLMClient) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "I am interested in this role."}}]
+            },
+        )
+    )
+
+    result = await llm_client.generate_reply("Recruiter email body")
+    assert result == "I am interested in this role."
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_reply_failure(llm_client: LLMClient) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(500)
+    )
+
+    result = await llm_client.generate_reply("Recruiter email body")
+    assert result is None
 
 
 @respx.mock
