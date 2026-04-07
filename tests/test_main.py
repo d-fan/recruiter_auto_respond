@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from recruiter_auto_respond.main import Pipeline, PipelineClients, main
+from recruiter_auto_respond.state_manager import AppState
 
 
 @pytest.fixture
@@ -35,6 +36,7 @@ def pipeline(
         sheets=mock_sheets_client,
         llm=mock_llm_client,
         state=mock_state_manager,
+        label_id="label123",
     )
     return Pipeline(
         clients=clients,
@@ -47,9 +49,9 @@ async def test_pipeline_run_no_messages(
     pipeline, mock_state_manager, mock_gmail_client
 ):
     # Mock state
-    mock_state_manager.load_state.return_value = {
-        "last_run_timestamp": "2024-01-01T00:00:00.000Z"
-    }
+    mock_state_manager.load_state.return_value = AppState(
+        last_run_timestamp="2024-01-01T00:00:00.000Z"
+    )
     # Mock no messages
     mock_gmail_client.fetch_messages.return_value = []
 
@@ -64,9 +66,9 @@ async def test_pipeline_run_with_messages(
     pipeline, mock_state_manager, mock_gmail_client, mock_llm_client, mock_sheets_client
 ):
     # Mock state
-    mock_state_manager.load_state.return_value = {
-        "last_run_timestamp": "2024-01-01T00:00:00.000Z"
-    }
+    mock_state_manager.load_state.return_value = AppState(
+        last_run_timestamp="2024-01-01T00:00:00.000Z"
+    )
     # Mock messages
     mock_gmail_client.fetch_messages.return_value = [{"id": "msg1", "threadId": "t1"}]
     mock_gmail_client.fetch_message_metadata.return_value = {
@@ -96,9 +98,9 @@ async def test_pipeline_hard_stop_on_failure(
     pipeline, mock_state_manager, mock_gmail_client, mock_llm_client
 ):
     # Mock state
-    mock_state_manager.load_state.return_value = {
-        "last_run_timestamp": "2024-01-01T00:00:00.000Z"
-    }
+    mock_state_manager.load_state.return_value = AppState(
+        last_run_timestamp="2024-01-01T00:00:00.000Z"
+    )
     # Mock messages: msg1 fails, msg2 should not be processed
     msg1_dt = datetime(2024, 1, 1, 0, 0, 1, tzinfo=timezone.utc)
     msg1_ts = str(int(msg1_dt.timestamp() * 1000))
@@ -113,7 +115,6 @@ async def test_pipeline_hard_stop_on_failure(
         {"id": "msg1", "threadId": "t1", "internalDate": msg1_ts},
         {"id": "msg2", "threadId": "t2", "internalDate": msg2_ts},
     ]
-    mock_gmail_client.get_or_create_label.return_value = "label123"
 
     # msg1 fails on fetch_message_body
     mock_gmail_client.fetch_message_body.side_effect = [
@@ -150,7 +151,7 @@ async def test_main_pipeline_success():
         # Mock StateManager
         mock_state_manager = MagicMock()
         mock_state_manager.load_state = AsyncMock(
-            return_value={"last_run_timestamp": "2023-01-01T00:00:00.000Z"}
+            return_value=AppState(last_run_timestamp="2023-01-01T00:00:00.000Z")
         )
         mock_state_manager.update_watermark = AsyncMock(
             return_value="2023-01-01T01:00:00.000Z"
@@ -200,11 +201,11 @@ async def test_main_pipeline_success():
         ):
             await main()
 
-            # Verify interactions
-            mock_gmail.fetch_messages.assert_called_once()
-            mock_llm.classify_message.assert_called_once_with("Recruiter email body")
-            mock_gmail.add_label.assert_called_once_with("msg1", "label_id")
-            mock_sheets.get_message_ids.assert_called_once_with("sheet_id")
-            mock_sheets.append_row.assert_called_once()
-            mock_state_manager.update_watermark.assert_called_once()
-            mock_llm.close.assert_called_once()
+        # Verify interactions
+        mock_gmail.fetch_messages.assert_called_once()
+        mock_llm.classify_message.assert_called_once_with("Recruiter email body")
+        mock_gmail.add_label.assert_called_once_with("msg1", "label_id")
+        mock_sheets.get_message_ids.assert_called_once_with("sheet_id")
+        mock_sheets.append_rows.assert_called_once()
+        mock_state_manager.update_watermark.assert_called_once()
+        mock_llm.close.assert_awaited_once()

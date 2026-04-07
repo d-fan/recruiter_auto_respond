@@ -105,7 +105,10 @@ async def test_bearer_auth() -> None:
     )
 
     route = respx.post("http://localhost:8080/v1/chat/completions").mock(
-        return_value=Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+        return_value=Response(
+            200,
+            json={"choices": [{"message": {"content": '{"isRecruiter": true}'}}]},
+        )
     )
 
     try:
@@ -153,13 +156,13 @@ async def test_retry_on_failure(
         Response(200, json=success_json),
     ]
 
-    # Directly patch the wait configuration of the decorated function's retry object.
-    monkeypatch.setattr(llm_client._call_llm.retry, "wait", wait_none())
+    # Patch the wait configuration of the retry object
+    monkeypatch.setattr(llm_client._retry_config, "wait", wait_none())
 
     result = await llm_client.classify_message("Hello")
     assert result is True
-    expected_call_count = 3
-    assert route.call_count == expected_call_count
+    expected_calls = 3
+    assert route.call_count == expected_calls
 
 
 @respx.mock
@@ -192,8 +195,8 @@ async def test_parallel_limit() -> None:
         tasks = [client.classify_message(f"Msg {i}") for i in range(5)]
         results = await asyncio.gather(*tasks)
 
-        expected_results_count = 5
-        assert len(results) == expected_results_count
+        expected_results = 5
+        assert len(results) == expected_results
         assert all(results)
         assert peak_requests == test_limit
     finally:

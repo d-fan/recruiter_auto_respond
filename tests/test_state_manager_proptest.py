@@ -5,7 +5,7 @@ import tempfile
 from hypothesis import given
 from hypothesis import strategies as st
 
-from recruiter_auto_respond.state_manager import StateManager
+from recruiter_auto_respond.state_manager import AppState, StateManager
 
 # Strategy for ISO timestamps
 iso_timestamps = st.datetimes().map(lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
@@ -21,7 +21,7 @@ def test_watermark_properties(initial_ts, results):
 
     async def run_test():
         manager = StateManager(temp_state_file)
-        await manager.save_state({"last_run_timestamp": initial_ts})
+        await manager.save_state(AppState(last_run_timestamp=initial_ts))
 
         # Sort results by timestamp as the actual pipeline would
         sorted_results = sorted(results, key=lambda x: x[0])

@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from recruiter_auto_respond.config import settings
@@ -11,6 +10,7 @@ from recruiter_auto_respond.google_auth import get_google_services_async
 from recruiter_auto_respond.llm_client import LLMClient
 from recruiter_auto_respond.sheets_client import SheetsClient
 from recruiter_auto_respond.state_manager import StateManager
+from recruiter_auto_respond.utils import iso_to_ms, iso_to_unix, ms_to_iso
 
 
 @dataclass
@@ -21,6 +21,7 @@ class PipelineClients:
     sheets: SheetsClient
     llm: LLMClient
     state: StateManager
+    label_id: str
 
 
 class Pipeline:
@@ -40,7 +41,6 @@ class Pipeline:
     async def _classify_and_record(
         self,
         m: dict[str, Any],
-        label_id: str,
         stop_event: asyncio.Event,
     ) -> tuple[dict[str, Any] | None, str, bool]:
         """Process a single message: fetch body, classify, and label if needed."""
@@ -49,10 +49,7 @@ class Pipeline:
 
         message_id = m["id"]
         thread_id = m["threadId"]
-        # Convert internalDate (ms) to ISO format with ms precision
-        ms_timestamp = int(m["internalDate"])
-        msg_dt = datetime.fromtimestamp(ms_timestamp / 1000, tz=timezone.utc)
-        msg_ts_iso = msg_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        msg_ts_iso = ms_to_iso(int(m["internalDate"]))
 
         try:
             # Fetch body
@@ -64,7 +61,9 @@ class Pipeline:
             row = None
             if is_recruiter:
                 if not self.dry_run:
-                    await self.clients.gmail.add_label(message_id, label_id)
+                    await self.clients.gmail.add_label(
+                        message_id, self.clients.label_id
+                    )
                     self.logger.info(f"Labeled message {message_id} as Recruiter.")
                 else:
                     self.logger.info(
@@ -90,44 +89,52 @@ class Pipeline:
     async def process_messages(
         self,
         messages_with_metadata: list[dict[str, Any]],
-        label_id: str,
     ) -> tuple[list[dict[str, Any]], list[tuple[str, bool]]]:
         """Process messages in parallel and return results."""
         stop_event = asyncio.Event()
 
         tasks = [
-            self._classify_and_record(m, label_id, stop_event)
+            self._classify_and_record(m, stop_event)
             for m in messages_with_metadata
         ]
         gathered_results = await asyncio.gather(*tasks)
 
+        # Corrected loop
         rows_to_sync = []
-        watermark_input = []
+        watermark_input: list[tuple[str, bool]] = []
+        for m, (row, ts, success) in zip(
+            messages_with_metadata, gathered_results, strict=True
+        ):
+            current_ts = ts or ms_to_iso(int(m["internalDate"]))
 
-        for row, ts, success in gathered_results:
-            if not ts and not success:  # Indicates failure or hard stop
+            if stop_event.is_set() and not success and not row:
                 break
+
             if row:
                 rows_to_sync.append(row)
-            watermark_input.append((ts, success))
+            watermark_input.append((current_ts, success))
+
+            if not success:
+                break
 
         return rows_to_sync, watermark_input
-
     async def run(self) -> None:
         """Run the full pipeline."""
         self.logger.info("Starting the pipeline...", extra={"phase": "setup"})
 
         # 1. Load state
         state = await self.clients.state.load_state()
-        last_run_iso = state.get("last_run_timestamp", "1970-01-01T00:00:00.000Z")
+        last_run_iso = state.last_run_timestamp
         self.logger.info(f"Last run: {last_run_iso}", extra={"phase": "phase-1"})
 
         # Convert ISO to Unix timestamp
         try:
-            dt = datetime.fromisoformat(last_run_iso.replace("Z", "+00:00"))
-            last_run_unix_sec = int(dt.timestamp())
-            last_run_ms = int(dt.timestamp() * 1000)
+            last_run_unix_sec = iso_to_unix(last_run_iso)
+            last_run_ms = iso_to_ms(last_run_iso)
         except ValueError:
+            self.logger.warning(
+                f"Invalid last_run_timestamp: {last_run_iso}, defaulting to 0"
+            )
             last_run_unix_sec = 0
             last_run_ms = 0
 
@@ -177,16 +184,13 @@ class Pipeline:
             )
             return
 
-        # 4. Get label ID
-        label_id = await self.clients.gmail.get_or_create_label(self.label_name)
-
-        # 5. Process messages
+        # 4. Process messages
         self.logger.info("Processing messages...", extra={"phase": "phase-4"})
         rows_to_sync, watermark_input = await self.process_messages(
-            messages_with_metadata, label_id
+            messages_with_metadata
         )
 
-        # 6. Late-Sync Drift Protection
+        # 5. Late-Sync Drift Protection
         if rows_to_sync and not self.dry_run:
             self.logger.info(
                 "Performing late-sync drift check...", extra={"phase": "phase-5"}
@@ -204,17 +208,17 @@ class Pipeline:
                     [r["threadId"], r["messageId"], r["timestamp"]]
                     for r in filtered_rows
                 ]
-                # Assuming append_rows exists in origin/main's SheetsClient
-                # Wait, I should check if SheetsClient has append_rows or append_row
-                await self.clients.sheets.append_row(
-                    settings.GOOGLE_SHEET_ID, sync_data[0]
-                )  # Simplified for now, or check append_rows
+                await self.clients.sheets.append_rows(
+                    settings.GOOGLE_SHEET_ID, sync_data
+                )
             else:
-                self.logger.info("All messages already present in Sheets. Skipping sync.")
+                self.logger.info(
+                    "All messages already present in Sheets. Skipping sync."
+                )
         elif self.dry_run:
             self.logger.info("[DRY-RUN] Skipping Sheets sync.")
 
-        # 7. Update local state / watermark
+        # 6. Update local state / watermark
         self.logger.info("Updating local state...", extra={"phase": "phase-6"})
         new_watermark = await self.clients.state.update_watermark(watermark_input)
         self.logger.info(f"New watermark: {new_watermark}", extra={"phase": "phase-6"})
@@ -224,7 +228,6 @@ async def setup_clients() -> (
     tuple[GmailClient, SheetsClient, LLMClient, StateManager] | None
 ):
     """Initialize all necessary clients using settings."""
-    logger = logging.getLogger(__name__)
     try:
         gmail_service, sheets_service = await get_google_services_async(
             settings.GOOGLE_APPLICATION_CREDENTIALS
@@ -232,7 +235,9 @@ async def setup_clients() -> (
         gmail_client = GmailClient(
             gmail_service, parallel_limit=settings.PARALLEL_LIMIT
         )
-        sheets_client = SheetsClient(sheets_service)
+        sheets_client = SheetsClient(
+            sheets_service, parallel_limit=settings.PARALLEL_LIMIT
+        )
         llm_client = LLMClient(
             api_url=settings.LLM_API_URL,
             model_name=settings.LLM_MODEL_NAME,
@@ -242,14 +247,12 @@ async def setup_clients() -> (
             user=settings.LLM_USER,
             password=settings.LLM_PASS,
         )
-        state_file = getattr(settings, "STATE_FILE", "state.json")
         state_manager = StateManager(
-            state_file, default_lookback_days=settings.DEFAULT_LOOKBACK_DAYS
+            settings.STATE_FILE, default_lookback_days=settings.DEFAULT_LOOKBACK_DAYS
         )
-        logger.info("Clients initialized successfully.", extra={"phase": "setup"})
         return gmail_client, sheets_client, llm_client, state_manager
     except Exception:
-        logger.exception("Failed to initialize clients", extra={"phase": "setup"})
+        logging.exception("Failed to initialize clients")
         return None
 
 
@@ -259,16 +262,24 @@ async def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Perform dry run")
     args = parser.parse_args()
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
     clients_setup = await setup_clients()
     if not clients_setup:
         return
     gmail_client, sheets_client, llm_client, state_manager = clients_setup
+
+    label_id = await gmail_client.get_or_create_label(settings.GMAIL_LABEL_NAME)
 
     pipeline_clients = PipelineClients(
         gmail=gmail_client,
         sheets=sheets_client,
         llm=llm_client,
         state=state_manager,
+        label_id=label_id,
     )
 
     pipeline = Pipeline(
@@ -284,8 +295,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
     asyncio.run(main())
