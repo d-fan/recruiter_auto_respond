@@ -63,6 +63,19 @@ async def classify_and_record(
         is_recruiter = await clients.llm.classify_message(body)
 
         if is_recruiter:
+            # Generate draft reply
+            draft_reply = await clients.llm.generate_reply(body)
+            if draft_reply:
+                logger.info(
+                    "Generated draft reply for message %s: %s...",
+                    message_id,
+                    draft_reply[:50].replace("\n", " "),
+                )
+            else:
+                logger.warning(
+                    "Failed to generate draft reply for message %s.", message_id
+                )
+
             if not dry_run:
                 await clients.gmail.add_label(message_id, clients.label_id)
                 logger.info(f"Labeled message {message_id} as Recruiter.")
@@ -74,6 +87,7 @@ async def classify_and_record(
                 "threadId": thread_id,
                 "messageId": message_id,
                 "timestamp": msg_ts_iso,
+                "draftReply": draft_reply,
             }
             return row, True
 

@@ -58,6 +58,7 @@ async def test_main_pipeline_success():
 
         # 5. Mock LLM: classify_message
         mock_llm.classify_message.return_value = True
+        mock_llm.generate_reply.return_value = "Draft reply"
 
         # 6. Mock Sheets: get_message_ids
         mock_sheets.get_message_ids.return_value = set()
@@ -77,6 +78,7 @@ async def test_main_pipeline_success():
             # Verify interactions
             mock_gmail.fetch_messages.assert_called_once()
             mock_llm.classify_message.assert_called_once_with("Recruiter email body")
+            mock_llm.generate_reply.assert_called_once_with("Recruiter email body")
             mock_gmail.add_label.assert_called_once_with("msg1", "label_id")
             mock_sheets.get_message_ids.assert_called_once_with("sheet_id")
             mock_sheets.append_rows.assert_called_once()
