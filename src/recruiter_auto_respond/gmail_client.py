@@ -12,7 +12,7 @@ class GmailClient(BaseClient):
         """Fetch all messages matching the query, handling pagination."""
         logging.info(f"Fetching messages for query: {query}")
 
-        def _fetch() -> list[dict[str, Any]]:
+        def _fetch_all() -> list[dict[str, Any]]:
             messages: list[dict[str, Any]] = []
             next_page_token = None
             while True:
@@ -28,7 +28,7 @@ class GmailClient(BaseClient):
                     break
             return messages
 
-        return await self._run_async(_fetch)
+        return await self._run_async(_fetch_all)
 
     async def fetch_message_metadata(self, message_id: str) -> dict[str, Any]:
         """Fetch metadata for a specific message (e.g., internalDate)."""

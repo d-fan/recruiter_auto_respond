@@ -1,27 +1,40 @@
-# Handoff: Ticket 6 - State Management & Watermark Logic
+# Handoff: Improving Test Coverage & Testability
 
 ## Overview
-The next task is to implement the **Watermark** logic within `src/recruiter_auto_respond/state_manager.py`. This component is responsible for tracking progress reliably, ensuring no threads are skipped even if errors occur during processing.
+The project is a high-performance Python migration of a Google Apps Script that automatically labels recruiter emails and syncs them to Google Sheets. The core functionality—including Gmail API interaction, LLM classification (via `llama.cpp`), Sheets syncing with drift protection, and state management—is now functional and orchestrated. 
 
-## Current State
-- `state_manager.py` already implements atomic JSON save/load.
-- `last_run_timestamp` is currently initialized to 1970-01-01 in the stub.
-- The "Watermark" logic—calculating the highest *consecutive* successful thread—is not yet implemented.
+The focus of this task is to **increase test coverage** and **improve code testability**, specifically through **unit tests**.
 
-## Requirements (from Issue #7 & AGENTS.md)
-1.  **Watermark Checkpointing:** Progress must be tracked by the date of the highest *consecutive* successful thread.
-2.  **Success Definition:** For the purposes of advancing the watermark, a thread is considered successful once it has been **labeled in Gmail**. (Syncing to Sheets is handled in a subsequent step and doesn't block the watermark).
-3.  **No Skipping (Hard Stop):** If a thread fails to be labeled (e.g., Gmail API error, LLM timeout), the watermark **cannot advance** past it, even if subsequent threads succeed. The pipeline should perform a hard stop at the first failure.
-4.  **Atomic Persistence:** The `last_run_timestamp` must be updated in `state.json` only after the batch of consecutive threads is successfully labeled.
-5.  **Sorting:** Threads must be processed from oldest to newest to ensure the watermark advances correctly.
-6.  **Timestamp Format:** Use **ISO 8601 format** (e.g., `2026-03-18T12:00:00Z`) for `last_run_timestamp` in `state.json`.
-7.  **Default Lookback:** If no `state.json` exists (initial run), default to a lookback period of **7 days**.
+## Current State & Goals
+- **Project Goal:** Ensure a reliable, long-term replacement for the original `appscript.js`.
+- **Architecture:** 
+  - `main.py`: Entry point and orchestrator.
+  - `llm_client.py`: Classification logic with `tenacity` retries and `asyncio.Semaphore`.
+  - `gmail_client.py`: Wrapper for Gmail API (Search, Fetch, Label).
+  - `sheets_client.py`: Wrapper for Sheets API (ID fetching, Batch append).
+  - `state_manager.py`: Atomic JSON checkpointing for the "Watermark" logic.
+- **Existing Tests:**
+  - **Unit Tests:** `test_gmail_client.py`, `test_llm_client.py`, `test_sheets_client.py`, `test_state_manager.py`, `test_main.py`.
+  - **Conformance Tests:** `conformance_gmail.py`, `conformance_llm.py`, `conformance_sheets.py`.
+
+## Task: Enhancing Testability & Coverage
+The primary goal is to improve the **unit test suite**. There is no specific target coverage percentage, but the focus should be on high-risk areas and complex logic.
+
+### Key Focus Areas:
+1.  **Dependency Injection:** Review and refactor client initializations (Gmail, Sheets, LLM) to ensure all external dependencies can be cleanly mocked without relying on environment state or complex monkeypatching.
+2.  **Refactoring for Testability:** Decouple `main.py` and the `process_messages` loop to allow for isolated unit testing of the orchestration and "Hard Stop" logic.
+3.  **Edge Case Coverage:** Increase unit test coverage for rare failures:
+    - Partial Sheets write failures.
+    - Non-standard or malformed LLM JSON responses.
+    - Gmail rate limit triggers (ensuring `tenacity` behaves as expected).
+4.  **Property-Based Testing:** Consider using `Hypothesis` for the Watermark calculation logic in `state_manager.py` to ensure it handles all edge cases of thread ordering and success/failure status.
+
+## Guidelines & Recommendations
+- **Mocking Strategy:** There are no specific library preferences. If you recommend introducing a new mocking or testing library (beyond `unittest.mock` and `respx`), you must **justify the choice** and demonstrate the complexity/alternative of doing the same task without it.
+- **CI/CD:** No CI pipeline is required for now, but ensure all tests can be run easily via `pytest`.
 
 ## Next Steps for New Agent
-1.  **Orchestration Update:** Modify the pipeline orchestration (likely in `main.py`) to track the label status of each thread and pass this to the watermark logic.
-2.  **Implementation:** Implement the watermark calculation logic in `StateManager`. Ensure it correctly identifies the timestamp of the last consecutive successful thread.
-3.  **Unit Tests:** Create `tests/test_state_manager.py` (or update existing ones) to simulate:
-    - A fully successful batch (watermark advances to the latest thread).
-    - A batch with a failure in the middle (watermark stops at the thread immediately preceding the failure).
-    - An initial run with no state file (verifying the 7-day lookback).
-4.  **Validation:** Verify that `state.json` is updated atomically and only on success.
+1.  **Baseline:** Run the existing test suite (`pytest`) and generate a coverage report (e.g., using `pytest-cov`) to identify the most significant "dark spots".
+2.  **Prioritize:** Identify the 3-5 most critical areas for improvement based on logic complexity and failure risk.
+3.  **Refactor & Propose:** Propose specific refactors to improve testability (e.g., introducing a `ServiceContainer` or standardizing constructor injection).
+4.  **Implement:** Add new unit tests to cover the identified gaps and verify the refactors.

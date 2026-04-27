@@ -12,3 +12,5 @@ token.json
 build/
 dist/
 HANDOFF.md
+.coverage
+.hypothesis/

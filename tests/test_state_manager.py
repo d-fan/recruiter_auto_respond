@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from recruiter_auto_respond.config import settings
 from recruiter_auto_respond.state_manager import AppState, StateManager
 
 
@@ -24,16 +23,17 @@ async def test_load_state_no_file(temp_state_file: str) -> None:
     if os.path.exists(temp_state_file):
         os.remove(temp_state_file)
 
-    manager = StateManager(temp_state_file)
+    lookback_days = 7
+    manager = StateManager(temp_state_file, default_lookback_days=lookback_days)
     state = await manager.load_state()
 
-    # Check if the timestamp is roughly DEFAULT_LOOKBACK_DAYS ago
+    # Check if the timestamp is roughly lookback_days ago
     last_run = state.last_run_timestamp
     assert last_run is not None
 
     dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
     now = datetime.now(timezone.utc)
-    expected = now - timedelta(days=settings.DEFAULT_LOOKBACK_DAYS)
+    expected = now - timedelta(days=lookback_days)
 
     # Allow for some small difference in time
     time_threshold_seconds = 60

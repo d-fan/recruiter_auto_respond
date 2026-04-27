@@ -6,24 +6,25 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 
-from recruiter_auto_respond.config import settings
-
 
 class AppState(BaseModel):
     """Schema for local application state."""
 
-    last_run_timestamp: str = Field(
-        default_factory=lambda: (
-            datetime.now(timezone.utc) - timedelta(days=settings.DEFAULT_LOOKBACK_DAYS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
+    last_run_timestamp: str = Field(default="1970-01-01T00:00:00Z")
 
 
 class StateManager:
     """Manager for local state persistence using Pydantic."""
 
-    def __init__(self, state_file: str) -> None:
+    def __init__(self, state_file: str, default_lookback_days: int = 7) -> None:
         self.state_file = state_file
+        self.default_lookback_days = default_lookback_days
+
+    def _get_default_timestamp(self) -> str:
+        """Return default timestamp based on lookback days."""
+        return (
+            datetime.now(timezone.utc) - timedelta(days=self.default_lookback_days)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     async def load_state(self) -> AppState:
         """Load state from file and return an AppState model."""
@@ -38,9 +39,9 @@ class StateManager:
                 except (json.JSONDecodeError, ValueError):
                     logging.exception(f"Failed to load or validate {self.state_file}")
                     # In case of corruption, return a default state
-                    return AppState()
+                    return AppState(last_run_timestamp=self._get_default_timestamp())
 
-            return AppState()
+            return AppState(last_run_timestamp=self._get_default_timestamp())
 
         return await asyncio.to_thread(_load)
 

@@ -38,7 +38,9 @@ async def verify_gmail_operations() -> None:
         gmail_service, _ = await get_google_services_async(
             settings.GOOGLE_APPLICATION_CREDENTIALS
         )
-        gmail_client = GmailClient(gmail_service)
+        gmail_client = GmailClient(
+            gmail_service, parallel_limit=settings.PARALLEL_LIMIT
+        )
         logger.info("Gmail service initialized successfully.")
     except Exception:
         logger.exception("Failed to initialize Gmail service")

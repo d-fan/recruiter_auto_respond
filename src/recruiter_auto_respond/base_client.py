@@ -9,7 +9,6 @@ from tenacity import (
     wait_exponential,
 )
 
-from .config import settings
 from .error_handling import is_transient_error
 
 T = TypeVar("T")
@@ -18,9 +17,9 @@ T = TypeVar("T")
 class BaseClient:
     """Base client with common functionality for Google API clients."""
 
-    def __init__(self, service: Any) -> None:
+    def __init__(self, service: Any, parallel_limit: int = 1) -> None:
         self.service = service
-        self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+        self.semaphore = asyncio.Semaphore(parallel_limit)
         self._retry_config = AsyncRetrying(
             retry=retry_if_exception(is_transient_error),
             stop=stop_after_attempt(3),

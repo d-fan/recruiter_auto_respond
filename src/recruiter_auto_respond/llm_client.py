@@ -11,25 +11,42 @@ from tenacity import (
     wait_exponential,
 )
 
-from .config import settings
 from .error_handling import is_transient_error
 
 
 class LLMClient:
     """Client for classification using a local LLM."""
 
-    def __init__(self, api_url: str, api_key: str = "sk-no-key-required") -> None:
+    def __init__(  # noqa: PLR0913
+        self,
+        api_url: str,
+        model_name: str,
+        parallel_limit: int = 1,
+        max_context: int = 4096,
+        api_key: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+    ) -> None:
         """Initialize the LLM client.
 
         Args:
             api_url: The base URL of the LLM API (e.g., http://localhost:8080/v1).
-            api_key: Optional API key for authentication.
+            model_name: The name of the model to use.
+            parallel_limit: Maximum number of parallel requests.
+            max_context: Maximum characters for truncation.
+            api_key: API Key for authentication.
+            user: Basic Auth username.
+            password: Basic Auth password.
         """
         if not api_url.endswith("/"):
             api_url += "/"
         self.api_url = httpx.URL(api_url)
+        self.model_name = model_name
+        self.max_context = max_context
         self.api_key = api_key
-        self.semaphore = asyncio.Semaphore(settings.PARALLEL_LIMIT)
+        self.user = user
+        self.password = password
+        self.semaphore = asyncio.Semaphore(parallel_limit)
         self.client = httpx.AsyncClient(timeout=60.0)
         self._retry_config = AsyncRetrying(
             retry=retry_if_exception(is_transient_error),
@@ -55,34 +72,33 @@ class LLMClient:
         await self.client.aclose()
 
     def _get_headers(self) -> dict[str, str]:
-        """Generate authentication headers based on settings.
+        """Generate authentication headers based on credentials.
 
         Returns:
-            A dictionary containing the Authorization header.
+            A dictionary containing the Authorization header, or empty if no
+            credentials are provided.
         """
-        if settings.LLM_USER and settings.LLM_PASS:
-            raw_auth = f"{settings.LLM_USER}:{settings.LLM_PASS}"
-            auth = base64.b64encode(raw_auth.encode()).decode()
-            return {"Authorization": f"Basic {auth}"}
-
-        # Use provided api_key or fall back to settings
-        token = self.api_key
-        if not token or token == "sk-no-key-required":
-            token = settings.LLM_API_KEY
-
-        return {"Authorization": f"Bearer {token}"}
+        if self.user and self.password:
+            auth_str = f"{self.user}:{self.password}"
+            encoded_auth = base64.b64encode(auth_str.encode()).decode()
+            return {"Authorization": f"Basic {encoded_auth}"}
+        if self.api_key:
+            return {"Authorization": f"Bearer {self.api_key}"}
+        return {}
 
     async def classify_message(self, body: str) -> bool:
         """Classify message as recruiter or not."""
 
         async def _call() -> bool:
             async with self.semaphore:
-                truncated_body = body[: settings.LLM_MAX_CONTEXT]
+                truncated_body = body[: self.max_context]
+                url = self.api_url.join("chat/completions")
+                logging.info("Posting to %s", url)
                 response = await self.client.post(
-                    self.api_url.join("chat/completions"),
+                    url,
                     headers=self._get_headers(),
                     json={
-                        "model": settings.LLM_MODEL_NAME,
+                        "model": self.model_name,
                         "messages": [
                             {"role": "system", "content": self.system_prompt},
                             {"role": "user", "content": truncated_body},
