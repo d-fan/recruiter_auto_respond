@@ -167,6 +167,39 @@ async def test_retry_on_failure(
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_generate_reply_success(llm_client: LLMClient) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "I am interested in this role."}}]
+            },
+        )
+    )
+
+    result = await llm_client.generate_reply("Recruiter email body")
+    assert result == "I am interested in this role."
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_reply_failure(
+    llm_client: LLMClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    respx.post("http://localhost:8080/v1/chat/completions").mock(
+        return_value=Response(500)
+    )
+
+    # Disable Tenacity backoff so this failure-path unit test stays fast
+    # and deterministic while still exercising the retry logic.
+    monkeypatch.setattr(llm_client._retry_config, "wait", wait_none())
+
+    result = await llm_client.generate_reply("Recruiter email body")
+    assert result is None
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_parallel_limit() -> None:
     test_limit = 2
     client = LLMClient(

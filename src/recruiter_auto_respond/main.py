@@ -60,6 +60,20 @@ class Pipeline:
 
             row = None
             if is_recruiter:
+                # Generate draft reply
+                draft_reply = await self.clients.llm.generate_reply(body)
+                if draft_reply:
+                    self.logger.info(
+                        "Generated draft reply for message %s: %s...",
+                        message_id,
+                        draft_reply[:50].replace("\n", " "),
+                    )
+                else:
+                    self.logger.warning(
+                        "Failed to generate draft reply for message %s.",
+                        message_id,
+                    )
+
                 if not self.dry_run:
                     await self.clients.gmail.add_label(
                         message_id, self.clients.label_id
@@ -75,6 +89,7 @@ class Pipeline:
                     "threadId": thread_id,
                     "messageId": message_id,
                     "timestamp": msg_ts_iso,
+                    "draftReply": draft_reply,
                 }
             else:
                 self.logger.info(f"Skipped message {message_id} (Not Recruiter).")
@@ -121,6 +136,7 @@ class Pipeline:
                 break
 
         return rows_to_sync, watermark_input
+
     async def run(self) -> None:
         """Run the full pipeline."""
         self.logger.info("Starting the pipeline...", extra={"phase": "setup"})
@@ -208,7 +224,12 @@ class Pipeline:
             if filtered_rows:
                 self.logger.info(f"Syncing {len(filtered_rows)} rows to Sheets.")
                 sync_data = [
-                    [r["threadId"], r["messageId"], r["timestamp"]]
+                    [
+                        r["threadId"],
+                        r["messageId"],
+                        r["timestamp"],
+                        r.get("draftReply", ""),
+                    ]
                     for r in filtered_rows
                 ]
                 await self.clients.sheets.append_rows(
