@@ -26,7 +26,9 @@ dev = [
     "pre-commit",
     "pytest",
     "pytest-asyncio",
+    "pytest-cov",
     "respx",
+    "hypothesis",
     "types-requests",
     "types-setuptools",
 ]
